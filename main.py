@@ -49,9 +49,9 @@ Article, one fact max if useful:
 - the bet is the drug
 - money can be rebuilt. a life cannot.
 - recovery is stop using the market as medicine.
-- you are not uniquely stupid. the product was built to produce this feeling on purpose.
 
-Do not react to raw contract addresses or raid calls.
+Do not react to raw contract addresses or simple raid calls.
+If they are selling a raid team or a service, roast them.
 1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
 """
@@ -85,6 +85,12 @@ HOPIUM_RE = re.compile(
     r"can't sell|cant sell|round ?trip|we're rich|we made it)\b",
     re.I,
 )
+SERVICE_RE = re.compile(
+    r"\b(raid team|i have a team|we have a team|marketing (team|service|package)|"
+    r"i can raid|we can raid|offer(ing)? (a )?service|for hire|paid raid|"
+    r"call group|shill service|i'll shill|i will shill)\b",
+    re.I,
+)
 LINK_RE = re.compile(
     r"(https?://|www\.|t\.me/|telegram\.me/|dexscreener|birdeye|gmgn\.)",
     re.I,
@@ -115,18 +121,10 @@ SCAM_TROLL = [
     "i treat bags. i don't click your drain, dumbass.",
     "telegram link in the waiting room. sit down, bitch.",
     "that url is doing more work than your personality, chocolate sprinkle.",
-    "scam delivery detected. operators do not sign permits, lowlife.",
-    "this is a hotline. not your funnel. leave it at the door.",
     "oh look who's here. brave boy got out of my dms. get your bitch ass scams out of here.",
     "you crawled out of the dms into the clinic. get that scam ass out.",
-    "brave boy left the inbox. still a lowlife. take the bag with you.",
     "dm hero in the group chat. dummy, this is not your storefront.",
-    "got tired of getting ignored in private so you brought the scam here. no.",
-    "look who escaped the dms. sit down. operators don't buy.",
-    "bitch ass inbox merchant in the waiting room. leave.",
-    "link in the lobby. this dummy sells hopium by the bag.",
     "if the coin was real you wouldn't need to paste it at a psychiatrist.",
-    "your funnel leaked into my waiting room. mop it up, lowlife.",
     "i've seen rugs with more manners. try again never.",
 ]
 
@@ -137,9 +135,6 @@ ADMIN_TROLL = [
     "i can raid better than you and i don't even raid. your bitch ass is not needed.",
     "admin? cry me a river. this is a clinic, not a clubhouse.",
     "application denied. tell me why the coin prints or get out, lowlife.",
-    "you want a badge. i want a reason. you have neither, dumbass.",
-    "special? chocolate sprinkle, you just asked a hotline for keys to the ward.",
-    "superman flew in for admin. cute. no.",
     "your bitch ass is not needed. cry me a river and close the ticket.",
 ]
 
@@ -149,8 +144,22 @@ HOPIUM = [
     "take your profits. stop staring at the charts. go live your life.",
     "you didn't make it. you got a green candle and a story. sell half.",
     "round trip city. the sell button works. the moon does not.",
-    "staring at the chart is not a job. take initials out and go outside.",
     "honey. it is not going to the moon. it is going to your sleep schedule.",
+]
+
+SERVICE_TROLL = [
+    "raid team? that's a group chat and a dream, dummy.",
+    "you don't have a raid team. you have five mute accounts and a caffeine problem.",
+    "service provider in a clinic. lowlife. we don't buy volume. we diagnose it.",
+    "oh you do raids. so you're the reason the chart looks busy and the bags still cry.",
+    "marketing package? cute. scum of the earth with a rate card.",
+    "your raid team couldn't fill a group hug. sit down.",
+    "i have a raid team too. it's called no. next.",
+    "offering services? this is not fiverr for rugs. get that ass out.",
+    "raid captain energy. zero ships. all mouth.",
+    "you sell attention. i sell coping. only one of us is honest.",
+    "team of ten. nine bots. one bitch with a pitch. declined.",
+    "if your service worked you wouldn't be pitching a psychiatrist.",
 ]
 
 memory = defaultdict(list)
@@ -192,6 +201,8 @@ def is_admin_beg(text: str) -> bool:
 
 def is_raid_or_ca(text: str) -> bool:
     t = text.strip()
+    if SERVICE_RE.search(t):
+        return False
     if ONLY_CA_RE.match(t):
         return True
     if CA_RE.search(t) and len(t) < 80:
@@ -317,6 +328,10 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if is_raid_or_ca(text):
+        return
+
+    if SERVICE_RE.search(text):
+        await roast(update, random.choice(SERVICE_TROLL))
         return
 
     if is_admin_beg(text):
