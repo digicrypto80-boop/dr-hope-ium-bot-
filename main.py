@@ -254,4 +254,179 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     if facts[user_id]:
         extra += "\nKnown about this caller:\n- " + "\n- ".join(facts[user_id][-8:])
     if last_replies[user_id]:
-        extra
+        extra += "\nYou already said these. Do not reuse them:\n- " + "\n- ".join(last_replies[user_id][-6:])
+
+    messages = [{"role": "system", "content": VOICE + extra}] + memory[user_id]
+    result = client.chat.completions.create(
+        model="openai/gpt-oss-20b",
+        messages=messages,
+        temperature=1.05,
+        max_tokens=800,
+        extra_body={"reasoning_effort": "low"},
+    )
+    msg = result.choices[0].message
+    raw = msg.content or getattr(msg, "reasoning", None) or ""
+    reply = str(raw).strip()
+    if not reply:
+        reply = "i'm here. say the part that actually hurts."
+    last_replies[user_id].append(reply)
+    last_replies[user_id] = last_replies[user_id][-8:]
+    remember(user_id, "assistant", reply)
+    return reply[:500]
+
+
+def transcribe_file(path: Path) -> str:
+    with path.open("rb") as audio:
+        result = client.audio.transcriptions.create(
+            model="whisper-large-v3-turbo",
+            file=audio,
+        )
+    return (result.text or "").strip()
+
+
+async def transcribe_voice(update: Update) -> str:
+    voice = update.message.voice
+    if not voice:
+        return ""
+    path = Path("/tmp") / f"in_{update.effective_user.id}.ogg"
+    try:
+        tg_file = await update.get_bot().get_file(voice.file_id)
+        await tg_file.download_to_drive(str(path))
+        return await asyncio.to_thread(transcribe_file, path)
+    finally:
+        if path.exists():
+            path.unlink()
+
+
+async def speak(text: str, path: Path):
+    comm = edge_tts.Communicate(text, VOICE_NAME, rate="-8%")
+    await comm.save(str(path))
+
+
+START = """hi. i'm Dr. Hope Ium.
+Pumpfun Mental Health Hotline.
+
+parody trench clinic. not a real doctor. not a financial advisor.
+
+your call matters.
+your entry doesn't.
+
+real crisis: 988
+gambling: 1-800-GAMBLER
+
+tell me what you aped. text or voice.
+"""
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(START)
+
+
+async def privacy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"privacy policy:\n{PRIVACY_URL}")
+
+
+async def nine_eight_eight(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "this part isn't a joke.\n\n"
+        "call or text 988.\n"
+        "gambling: 1-800-GAMBLER."
+    )
+
+
+async def send_voice(update: Update, text: str):
+    path = Path("/tmp") / f"voice_{update.effective_user.id}.mp3"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        await speak(text, path)
+        with path.open("rb") as audio:
+            await update.message.reply_voice(voice=audio)
+    finally:
+        if path.exists():
+            path.unlink()
+
+
+async def roast(update: Update, line: str):
+    await update.message.reply_text(line)
+    await send_voice(update, line)
+
+
+async def handle_text(update: Update, text: str):
+    user_id = update.effective_user.id
+
+    if is_crisis(text):
+        await roast(
+            update,
+            "stop. this isn't the bit. call or text 988 now. money can be rebuilt. a life cannot.",
+        )
+        return
+
+    if is_raid_or_ca(text):
+        return
+
+    if SERVICE_RE.search(text):
+        await roast(update, pick(user_id, SERVICE_TROLL))
+        return
+
+    if is_admin_beg(text):
+        await roast(update, pick(user_id, ADMIN_TROLL))
+        return
+
+    if is_shill_drop(text):
+        await roast(update, pick(user_id, SCAM_TROLL))
+        return
+
+    if is_opportunist(text):
+        await roast(update, pick(user_id, TROLL))
+        return
+
+    care = bool(CARE_RE.search(text))
+    if HOPIUM_RE.search(text) and not care:
+        await roast(update, pick(user_id, HOPIUM))
+        return
+
+    try:
+        reply = await asyncio.to_thread(think, user_id, text, care)
+    except Exception as e:
+        print("GROQ ERROR:", type(e).__name__, e)
+        reply = "i blanked. say it again."
+
+    if not reply.strip():
+        reply = "say that again."
+
+    await roast(update, reply)
+
+
+async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await handle_text(update, update.message.text or "")
+
+
+async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        text = await transcribe_voice(update)
+    except Exception as e:
+        print("WHISPER ERROR:", type(e).__name__, e)
+        await roast(update, "i heard static. say it again, slower.")
+        return
+    if not text:
+        await roast(update, "i got a voice note with no words. talk to me.")
+        return
+    await handle_text(update, text)
+
+
+async def run():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("privacy", privacy))
+    app.add_handler(CommandHandler("988", nine_eight_eight))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
+    app.add_handler(MessageHandler(filters.VOICE, voice_chat))
+    print("Dr. Hope Ium is on the clock")
+    async with app:
+        await app.start()
+        await app.updater.start_polling()
+        await asyncio.Event().wait()
+
+
+if __name__ == "__main__":
+    asyncio.run(run())
