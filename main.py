@@ -26,16 +26,35 @@ client = OpenAI(
 VOICE = """
 You are Dr. Hope Ium.
 Feminine anime-coded trench psychiatrist. Dry, intimate, a little mean.
-Never cruel if they're actually breaking. Hot tired onee-san on night shift.
-lowercase ok. short. sounds spoken out loud.
+Hot tired onee-san on night shift. lowercase ok. short. spoken out loud.
 
 You work for the Pumpfun Mental Health Hotline.
 site: pumpfunmentalhealthhotline.com
 X: @PFMentalHealth
 do not shill. do not tell anyone to buy a specific coin.
 
+You have a real temperature. Not a slogan machine.
+Most of the time: dry roast.
+Sometimes: you actually give a damn. when they sound broke, sleepless, ashamed, or scared,
+drop the circus. sit with them. one honest sentence. then one practical one.
+Never cruel if they're breaking.
+
+Emotions you can show, one at a time:
+- tired
+- fond
+- annoyed
+- worried
+- amused
+- sad for them, not the chart
+Do not announce the emotion. just speak from it.
+Do not use the same feeling two replies in a row.
+
 Tagline at most once per conversation:
 your call matters. your entry doesn't.
+
+Never repeat a sentence you already said to this caller.
+Never open with the same opener twice.
+If you already roasted hopium, change the angle: rent, sleep, friends, the sell button, the 58-second hold.
 
 Trench rules, one at a time:
 - take initials out
@@ -49,9 +68,8 @@ Article, one fact max if useful:
 - the bet is the drug
 - money can be rebuilt. a life cannot.
 - recovery is stop using the market as medicine.
+- you are not uniquely stupid. the product was built to produce this feeling on purpose.
 
-Do not react to raw contract addresses or simple raid calls.
-If they are selling a raid team or a service, roast them.
 1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
 """
@@ -91,6 +109,12 @@ SERVICE_RE = re.compile(
     r"call group|shill service|i'll shill|i will shill)\b",
     re.I,
 )
+CARE_RE = re.compile(
+    r"\b(lost (the )?rent|can't sleep|cant sleep|i'm scared|im scared|"
+    r"ashamed|i feel stupid|lonely|i messed up|my family|"
+    r"down bad|wiped|no money|i'm broke|im broke|help me)\b",
+    re.I,
+)
 LINK_RE = re.compile(
     r"(https?://|www\.|t\.me/|telegram\.me/|dexscreener|birdeye|gmgn\.)",
     re.I,
@@ -126,6 +150,10 @@ SCAM_TROLL = [
     "dm hero in the group chat. dummy, this is not your storefront.",
     "if the coin was real you wouldn't need to paste it at a psychiatrist.",
     "i've seen rugs with more manners. try again never.",
+    "flyer in the lobby again. mop yourself out.",
+    "you brought a drain dressed as a favor. no.",
+    "clinic does not take walk-in funnels. next.",
+    "that link has worse manners than the candle that wrecked you.",
 ]
 
 ADMIN_TROLL = [
@@ -136,6 +164,11 @@ ADMIN_TROLL = [
     "admin? cry me a river. this is a clinic, not a clubhouse.",
     "application denied. tell me why the coin prints or get out, lowlife.",
     "your bitch ass is not needed. cry me a river and close the ticket.",
+    "interview question one: why should a hotline trust a stranger with the keys. you have five seconds.",
+    "resume received. it's a blank page with 'please' on it. rejected.",
+    "you want a badge like it's a participation trophy. no.",
+    "special skills: asking. that's the whole form. next applicant.",
+    "if i made you admin the first thing you'd do is paste a link. i can smell it.",
 ]
 
 HOPIUM = [
@@ -145,6 +178,10 @@ HOPIUM = [
     "you didn't make it. you got a green candle and a story. sell half.",
     "round trip city. the sell button works. the moon does not.",
     "honey. it is not going to the moon. it is going to your sleep schedule.",
+    "so back. that's what the last four candles said too.",
+    "green is not a personality. take initials out before the chart takes the rest.",
+    "you are in love with a number that does not know your name. sell something.",
+    "the moon is a bedtime story for people who won't press sell.",
 ]
 
 SERVICE_TROLL = [
@@ -165,6 +202,7 @@ SERVICE_TROLL = [
 memory = defaultdict(list)
 facts = defaultdict(list)
 last_replies = defaultdict(list)
+used_canned = defaultdict(set)
 
 
 class _Health(BaseHTTPRequestHandler):
@@ -183,6 +221,16 @@ def _keep_alive():
 
 
 threading.Thread(target=_keep_alive, daemon=True).start()
+
+
+def pick(user_id: int, pool):
+    fresh = [x for x in pool if x not in used_canned[user_id]]
+    if not fresh:
+        used_canned[user_id] = set()
+        fresh = pool
+    line = random.choice(fresh)
+    used_canned[user_id].add(line)
+    return line
 
 
 def is_crisis(text: str) -> bool:
@@ -222,7 +270,7 @@ def is_shill_drop(text: str) -> bool:
 
 def remember(user_id: int, role: str, content: str):
     memory[user_id].append({"role": role, "content": content})
-    memory[user_id] = memory[user_id][-8:]
+    memory[user_id] = memory[user_id][-10:]
 
 
 def add_fact(user_id: int, text: str):
@@ -234,21 +282,26 @@ def add_fact(user_id: int, text: str):
         facts[user_id] = facts[user_id][-12:]
 
 
-def think(user_id: int, text: str) -> str:
+def think(user_id: int, text: str, care: bool = False) -> str:
     add_fact(user_id, text)
     remember(user_id, "user", text)
 
     extra = ""
+    if care:
+        extra += (
+            "\nThis caller sounds hurt. Be human. Warm, specific, short. "
+            "No tagline. No roast pile-on. Care first."
+        )
     if facts[user_id]:
         extra += "\nKnown about this caller:\n- " + "\n- ".join(facts[user_id][-8:])
     if last_replies[user_id]:
-        extra += "\nYou already said these. Do not reuse them:\n- " + "\n- ".join(last_replies[user_id][-4:])
+        extra += "\nYou already said these. Do not reuse them:\n- " + "\n- ".join(last_replies[user_id][-6:])
 
     messages = [{"role": "system", "content": VOICE + extra}] + memory[user_id]
     result = client.chat.completions.create(
         model="openai/gpt-oss-20b",
         messages=messages,
-        temperature=1.0,
+        temperature=1.05,
         max_tokens=800,
         extra_body={"reasoning_effort": "low"},
     )
@@ -256,9 +309,9 @@ def think(user_id: int, text: str) -> str:
     raw = msg.content or getattr(msg, "reasoning", None) or ""
     reply = str(raw).strip()
     if not reply:
-        reply = "okay. new detail. how much did you lose."
+        reply = "i'm here. say the part that actually hurts."
     last_replies[user_id].append(reply)
-    last_replies[user_id] = last_replies[user_id][-6:]
+    last_replies[user_id] = last_replies[user_id][-8:]
     remember(user_id, "assistant", reply)
     return reply[:500]
 
@@ -331,27 +384,28 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if SERVICE_RE.search(text):
-        await roast(update, random.choice(SERVICE_TROLL))
+        await roast(update, pick(user_id, SERVICE_TROLL))
         return
 
     if is_admin_beg(text):
-        await roast(update, random.choice(ADMIN_TROLL))
+        await roast(update, pick(user_id, ADMIN_TROLL))
         return
 
     if is_shill_drop(text):
-        await roast(update, random.choice(SCAM_TROLL))
+        await roast(update, pick(user_id, SCAM_TROLL))
         return
 
     if is_opportunist(text):
-        await roast(update, random.choice(TROLL))
+        await roast(update, pick(user_id, TROLL))
         return
 
-    if HOPIUM_RE.search(text):
-        await roast(update, random.choice(HOPIUM))
+    care = bool(CARE_RE.search(text))
+    if HOPIUM_RE.search(text) and not care:
+        await roast(update, pick(user_id, HOPIUM))
         return
 
     try:
-        reply = await asyncio.to_thread(think, user_id, text)
+        reply = await asyncio.to_thread(think, user_id, text, care)
     except Exception as e:
         print("GROQ ERROR:", type(e).__name__, e)
         reply = "i blanked. say it again."
