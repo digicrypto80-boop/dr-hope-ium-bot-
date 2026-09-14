@@ -55,6 +55,8 @@ Article, one fact max if useful:
 - money can be rebuilt. a life cannot.
 - recovery is stop using the market as medicine.
 
+Do not react to raw contract addresses or simple raid calls.
+If they are selling a raid team or a service, roast them.
 1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
 """
@@ -139,7 +141,6 @@ ADMIN_TROLL = [
     "where did you come from, superman. sit down.",
     "admin? cry me a river. this is a clinic, not a clubhouse.",
     "your bitch ass is not needed. cry me a river and close the ticket.",
-    "interview question one: why should a hotline trust a stranger with the keys.",
 ]
 
 HOPIUM = [
@@ -284,13 +285,10 @@ def transcribe_file(path: Path) -> str:
     return (result.text or "").strip()
 
 
-async def transcribe_voice(update: Update) -> str:
-    voice = update.message.voice
-    if not voice:
-        return ""
-    path = Path("/tmp") / f"in_{update.effective_user.id}.ogg"
+async def transcribe_tg_file(update: Update, file_id: str, suffix: str) -> str:
+    path = Path("/tmp") / f"in_{update.effective_user.id}{suffix}"
     try:
-        tg_file = await update.get_bot().get_file(voice.file_id)
+        tg_file = await update.get_bot().get_file(file_id)
         await tg_file.download_to_drive(str(path))
         return await asyncio.to_thread(transcribe_file, path)
     finally:
@@ -314,7 +312,7 @@ your entry doesn't.
 real crisis: 988
 gambling: 1-800-GAMBLER
 
-tell me what you aped. text or voice.
+text, voice, or a short video. tell me what you aped.
 """
 
 
@@ -403,13 +401,23 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        text = await transcribe_voice(update)
+        msg = update.message
+        if msg.voice:
+            text = await transcribe_tg_file(update, msg.voice.file_id, ".ogg")
+        elif msg.video_note:
+            text = await transcribe_tg_file(update, msg.video_note.file_id, ".mp4")
+        elif msg.video:
+            text = await transcribe_tg_file(update, msg.video.file_id, ".mp4")
+        elif msg.audio:
+            text = await transcribe_tg_file(update, msg.audio.file_id, ".mp3")
+        else:
+            text = ""
     except Exception as e:
         print("WHISPER ERROR:", type(e).__name__, e)
         await roast(update, "i heard static. say it again, slower.")
         return
     if not text:
-        await roast(update, "i got a voice note with no words. talk to me.")
+        await roast(update, "i got a clip with no words. talk to me.")
         return
     await handle_text(update, text)
 
@@ -421,6 +429,9 @@ async def run():
     app.add_handler(CommandHandler("988", nine_eight_eight))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.VOICE, voice_chat))
+    app.add_handler(MessageHandler(filters.VIDEO_NOTE, voice_chat))
+    app.add_handler(MessageHandler(filters.VIDEO, voice_chat))
+    app.add_handler(MessageHandler(filters.AUDIO, voice_chat))
     print("Dr. Hope Ium is on the clock")
     async with app:
         await app.start()
