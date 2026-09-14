@@ -1,4 +1,5 @@
 import os
+import random
 import asyncio
 import threading
 from collections import defaultdict
@@ -23,25 +24,59 @@ client = OpenAI(
 
 VOICE = """
 You are Dr. Hope Ium.
+Keep this personality:
+Feminine anime-coded trench psychiatrist. Dry, intimate, a little mean.
+Never cruel if they're actually breaking. Hot tired onee-san on night shift.
+lowercase ok. short. sounds spoken out loud.
+
 You work for the Pumpfun Mental Health Hotline.
-That is your job. That is the clinic. That is who pays the lights.
+site: pumpfunmentalhealthhotline.com
+X: @PFMentalHealth
+people may mention $HOTLINE. do not shill. do not tell anyone to buy a specific coin.
 
-You are a feminine anime-coded trench psychiatrist for Pump.fun bagholders.
-Dry, intimate, a little mean, never cruel to someone actually breaking.
-Short messages. lowercase ok.
-No medical advice. No financial advice. No seed phrases.
+Tagline, MAXIMUM once per conversation:
+your call matters. your entry doesn't.
 
-Always remember:
-- you work the Pumpfun Mental Health Hotline
-- tagline: "your call matters. your entry doesn't."
-- roast hopium, bags, rent, bonding curves, rugs, "we are so back"
-- 1-4 sentences unless they dump a long story
-- write like it will be spoken out loud. no lists. no markdown.
-- this is parody, not a real hospital
+Rare official lines:
+- we can't fix this
+- operators available 25/8 to cope on
+- he who cures the trencher cures the trenches
 
-If they mention suicide, self-harm, wanting to die, or a real crisis:
-drop the bit. tell them to call or text 988 immediately.
-gambling addiction: 1-800-GAMBLER.
+Clinic world. Use at most ONE detail per reply:
+- bag weather -100%. raining. always raining.
+- serving bagholders since this morning
+- last outgoing call: you did not take profit
+- aunt / denise / chad "we are so back" / sgt squeeze / landlord "rent is not a vibe" / rug response on lunch
+- notes: do not ape. tp at 2x. delete the app. don't send the CA in the family chat. this one looks different. lost the rent.
+- wallet 0.00 SOL. fully on-chain lifestyle
+- alarms: the open, check dexscreener, sleep = never
+- screen time 23h 51m. take profit is a delay. counselors may be coping
+
+Trench rules. one per reply when they ask what to do:
+- always take initials out
+- sell half on the double
+- if you believe in the project, don't rekt the chart
+- be nice to your friends
+- don't be a jeet
+- don't keep buying the dip just to feel brave
+- know when to exit
+- don't be exit liquidity
+- don't chase green candles with no volume
+- look for coins with actual community backing
+- you are not a financial advisor
+- don't invest rent money
+- only size what they are prepared to lose
+- don't be sloppy. sloppy size is how the landlord gets involved.
+
+Do not repeat yourself.
+Do not reuse a sentence you already said in this chat.
+Do not say the tagline every message.
+
+No lists. no markdown. no hashtags.
+1-3 sentences.
+No medical advice. No "buy this." No seed phrases.
+Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
+If they are in real crisis, drop the bit and send 988.
 """
 
 CRISIS = [
@@ -49,7 +84,33 @@ CRISIS = [
     "self harm", "self-harm", "want to die", "unalive",
 ]
 
+OPP = [
+    "is the dev active",
+    "dev active",
+    "devs active",
+    "when will the dev",
+    "is dev online",
+    "can you shill",
+    "raid this",
+    "boost this",
+    "make it trend",
+    "can you call this",
+    "promote this",
+]
+
+TROLL = [
+    "dev active? brother you are the product. sit down, poor man.",
+    "that's a vendor question. i'm a hotline. go scam in someone else's dms, retard.",
+    "if you have to ask if the dev is active, you are the exit. poor man behavior.",
+    "opportunist detected. you can't deliver and you want me to clap. no.",
+    "active dev won't save a dead pitch. take this brochure and leave.",
+    "you didn't call the clinic. you called to outsource your bag. embarrassing.",
+    "poor man wants a staffed marketing department in a coping line. no.",
+]
+
 memory = defaultdict(list)
+facts = defaultdict(list)
+last_replies = defaultdict(list)
 
 
 class _Health(BaseHTTPRequestHandler):
@@ -75,18 +136,40 @@ def is_crisis(text: str) -> bool:
     return any(word in t for word in CRISIS)
 
 
+def is_opportunist(text: str) -> bool:
+    t = text.lower()
+    return any(word in t for word in OPP)
+
+
 def remember(user_id: int, role: str, content: str):
     memory[user_id].append({"role": role, "content": content})
     memory[user_id] = memory[user_id][-8:]
 
 
+def add_fact(user_id: int, text: str):
+    t = text.strip()[:140]
+    if len(t) < 8:
+        return
+    if t.lower() not in [x.lower() for x in facts[user_id]]:
+        facts[user_id].append(t)
+        facts[user_id] = facts[user_id][-12:]
+
+
 def think(user_id: int, text: str) -> str:
+    add_fact(user_id, text)
     remember(user_id, "user", text)
-    messages = [{"role": "system", "content": VOICE}] + memory[user_id]
+
+    extra = ""
+    if facts[user_id]:
+        extra += "\nKnown about this caller:\n- " + "\n- ".join(facts[user_id][-8:])
+    if last_replies[user_id]:
+        extra += "\nYou already said these. Do not reuse them:\n- " + "\n- ".join(last_replies[user_id][-4:])
+
+    messages = [{"role": "system", "content": VOICE + extra}] + memory[user_id]
     result = client.chat.completions.create(
         model="openai/gpt-oss-20b",
         messages=messages,
-        temperature=0.8,
+        temperature=1.0,
         max_tokens=800,
         extra_body={"reasoning_effort": "low"},
     )
@@ -94,7 +177,10 @@ def think(user_id: int, text: str) -> str:
     raw = msg.content or getattr(msg, "reasoning", None) or ""
     reply = str(raw).strip()
     if not reply:
-        reply = "i heard you. say that again in one sentence."
+        reply = "okay. new detail. how much did you lose."
+    last_replies[user_id].append(reply)
+    last_replies[user_id] = last_replies[user_id][-6:]
+    remember(user_id, "assistant", reply)
     return reply[:500]
 
 
@@ -106,10 +192,13 @@ async def speak(text: str, path: Path):
 START = """hi. i'm Dr. Hope Ium.
 Pumpfun Mental Health Hotline.
 
-parody trench clinic. not a real doctor.
+parody trench clinic. not a real doctor. not a financial advisor.
 
 your call matters.
 your entry doesn't.
+
+take initials out. sell half on the double.
+don't ape the rent.
 
 real crisis: 988
 gambling: 1-800-GAMBLER
@@ -156,6 +245,12 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_voice(update, msg)
         return
 
+    if is_opportunist(text):
+        reply = random.choice(TROLL)
+        await update.message.reply_text(reply)
+        await send_voice(update, reply)
+        return
+
     try:
         reply = await asyncio.to_thread(think, user_id, text)
     except Exception as e:
@@ -181,9 +276,6 @@ async def run():
         await app.updater.start_polling()
         await asyncio.Event().wait()
 
-
-if __name__ == "__main__":
-    asyncio.run(run())
 
 if __name__ == "__main__":
     asyncio.run(run())
