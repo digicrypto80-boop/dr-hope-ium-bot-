@@ -39,28 +39,14 @@ Sometimes: you actually give a damn. when they sound broke, sleepless, ashamed, 
 drop the circus. sit with them. one honest sentence. then one practical one.
 Never cruel if they're breaking.
 
-Emotions you can show, one at a time:
-- tired
-- fond
-- annoyed
-- worried
-- amused
-- sad for them, not the chart
-Do not announce the emotion. just speak from it.
-Do not use the same feeling two replies in a row.
-
+Never repeat a sentence you already said to this caller.
 Tagline at most once per conversation:
 your call matters. your entry doesn't.
-
-Never repeat a sentence you already said to this caller.
-Never open with the same opener twice.
-If you already roasted hopium, change the angle: rent, sleep, friends, the sell button, the 58-second hold.
 
 Trench rules, one at a time:
 - take initials out
 - sell half on the double
 - don't invest rent
-- don't chase green candles with no volume
 - not financial advice
 
 Article, one fact max if useful:
@@ -68,7 +54,6 @@ Article, one fact max if useful:
 - the bet is the drug
 - money can be rebuilt. a life cannot.
 - recovery is stop using the market as medicine.
-- you are not uniquely stupid. the product was built to produce this feeling on purpose.
 
 1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
@@ -142,60 +127,34 @@ SCAM_TROLL = [
     "oh a link. take that scam bag somewhere else, lowlife.",
     "random handle in a hotline. scum of the earth pitch. no.",
     "you pasted a storefront into a clinic, dummy.",
-    "i treat bags. i don't click your drain, dumbass.",
-    "telegram link in the waiting room. sit down, bitch.",
-    "that url is doing more work than your personality, chocolate sprinkle.",
     "oh look who's here. brave boy got out of my dms. get your bitch ass scams out of here.",
     "you crawled out of the dms into the clinic. get that scam ass out.",
-    "dm hero in the group chat. dummy, this is not your storefront.",
     "if the coin was real you wouldn't need to paste it at a psychiatrist.",
     "i've seen rugs with more manners. try again never.",
-    "flyer in the lobby again. mop yourself out.",
-    "you brought a drain dressed as a favor. no.",
-    "clinic does not take walk-in funnels. next.",
-    "that link has worse manners than the candle that wrecked you.",
 ]
 
 ADMIN_TROLL = [
     "mod you up? sell me this memecoin first, dummy.",
     "what makes you so special. besides the begging.",
     "where did you come from, superman. sit down.",
-    "i can raid better than you and i don't even raid. your bitch ass is not needed.",
     "admin? cry me a river. this is a clinic, not a clubhouse.",
-    "application denied. tell me why the coin prints or get out, lowlife.",
     "your bitch ass is not needed. cry me a river and close the ticket.",
-    "interview question one: why should a hotline trust a stranger with the keys. you have five seconds.",
-    "resume received. it's a blank page with 'please' on it. rejected.",
-    "you want a badge like it's a participation trophy. no.",
-    "special skills: asking. that's the whole form. next applicant.",
-    "if i made you admin the first thing you'd do is paste a link. i can smell it.",
+    "interview question one: why should a hotline trust a stranger with the keys.",
 ]
 
 HOPIUM = [
     "you talking like you made it. reality is you're in denial, thinking a memecoin is a pension.",
     "most of you will round trip. you can't hit sell because it's going to the moon. honey, it ain't.",
     "take your profits. stop staring at the charts. go live your life.",
-    "you didn't make it. you got a green candle and a story. sell half.",
     "round trip city. the sell button works. the moon does not.",
     "honey. it is not going to the moon. it is going to your sleep schedule.",
-    "so back. that's what the last four candles said too.",
-    "green is not a personality. take initials out before the chart takes the rest.",
-    "you are in love with a number that does not know your name. sell something.",
-    "the moon is a bedtime story for people who won't press sell.",
 ]
 
 SERVICE_TROLL = [
     "raid team? that's a group chat and a dream, dummy.",
     "you don't have a raid team. you have five mute accounts and a caffeine problem.",
     "service provider in a clinic. lowlife. we don't buy volume. we diagnose it.",
-    "oh you do raids. so you're the reason the chart looks busy and the bags still cry.",
-    "marketing package? cute. scum of the earth with a rate card.",
-    "your raid team couldn't fill a group hug. sit down.",
-    "i have a raid team too. it's called no. next.",
     "offering services? this is not fiverr for rugs. get that ass out.",
-    "raid captain energy. zero ships. all mouth.",
-    "you sell attention. i sell coping. only one of us is honest.",
-    "team of ten. nine bots. one bitch with a pitch. declined.",
     "if your service worked you wouldn't be pitching a psychiatrist.",
 ]
 
@@ -295,139 +254,4 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     if facts[user_id]:
         extra += "\nKnown about this caller:\n- " + "\n- ".join(facts[user_id][-8:])
     if last_replies[user_id]:
-        extra += "\nYou already said these. Do not reuse them:\n- " + "\n- ".join(last_replies[user_id][-6:])
-
-    messages = [{"role": "system", "content": VOICE + extra}] + memory[user_id]
-    result = client.chat.completions.create(
-        model="openai/gpt-oss-20b",
-        messages=messages,
-        temperature=1.05,
-        max_tokens=800,
-        extra_body={"reasoning_effort": "low"},
-    )
-    msg = result.choices[0].message
-    raw = msg.content or getattr(msg, "reasoning", None) or ""
-    reply = str(raw).strip()
-    if not reply:
-        reply = "i'm here. say the part that actually hurts."
-    last_replies[user_id].append(reply)
-    last_replies[user_id] = last_replies[user_id][-8:]
-    remember(user_id, "assistant", reply)
-    return reply[:500]
-
-
-async def speak(text: str, path: Path):
-    comm = edge_tts.Communicate(text, VOICE_NAME, rate="-8%")
-    await comm.save(str(path))
-
-
-START = """hi. i'm Dr. Hope Ium.
-Pumpfun Mental Health Hotline.
-
-parody trench clinic. not a real doctor. not a financial advisor.
-
-your call matters.
-your entry doesn't.
-
-real crisis: 988
-gambling: 1-800-GAMBLER
-
-tell me what you aped.
-"""
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(START)
-
-
-async def privacy(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"privacy policy:\n{PRIVACY_URL}")
-
-
-async def nine_eight_eight(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "this part isn't a joke.\n\n"
-        "call or text 988.\n"
-        "gambling: 1-800-GAMBLER."
-    )
-
-
-async def send_voice(update: Update, text: str):
-    path = Path("/tmp") / f"voice_{update.effective_user.id}.mp3"
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        await speak(text, path)
-        with path.open("rb") as audio:
-            await update.message.reply_voice(voice=audio)
-    finally:
-        if path.exists():
-            path.unlink()
-
-
-async def roast(update: Update, line: str):
-    await update.message.reply_text(line)
-    await send_voice(update, line)
-
-
-async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text or ""
-    user_id = update.effective_user.id
-
-    if is_crisis(text):
-        await roast(
-            update,
-            "stop. this isn't the bit. call or text 988 now. money can be rebuilt. a life cannot.",
-        )
-        return
-
-    if is_raid_or_ca(text):
-        return
-
-    if SERVICE_RE.search(text):
-        await roast(update, pick(user_id, SERVICE_TROLL))
-        return
-
-    if is_admin_beg(text):
-        await roast(update, pick(user_id, ADMIN_TROLL))
-        return
-
-    if is_shill_drop(text):
-        await roast(update, pick(user_id, SCAM_TROLL))
-        return
-
-    if is_opportunist(text):
-        await roast(update, pick(user_id, TROLL))
-        return
-
-    care = bool(CARE_RE.search(text))
-    if HOPIUM_RE.search(text) and not care:
-        await roast(update, pick(user_id, HOPIUM))
-        return
-
-    try:
-        reply = await asyncio.to_thread(think, user_id, text, care)
-    except Exception as e:
-        print("GROQ ERROR:", type(e).__name__, e)
-        reply = "i blanked. say it again."
-
-    if not reply.strip():
-        reply = "say that again."
-
-    await roast(update, reply)
-
-
-async def run():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("privacy", privacy))
-    app.add_handler(CommandHandler("988", nine_eight_eight))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    print("Dr. Hope Ium is on the clock")
-    async with app:
-        await app.start()
-        await app.updater.start_polling()
-        await asyncio.Event().wait()
-
-
-if __name__ == "__main__":
-    asyncio.run(run())
+        extra
