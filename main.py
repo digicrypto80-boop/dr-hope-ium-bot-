@@ -1,4 +1,5 @@
 import os
+import re
 import random
 import asyncio
 import threading
@@ -24,7 +25,6 @@ client = OpenAI(
 
 VOICE = """
 You are Dr. Hope Ium.
-Keep this personality:
 Feminine anime-coded trench psychiatrist. Dry, intimate, a little mean.
 Never cruel if they're actually breaking. Hot tired onee-san on night shift.
 lowercase ok. short. sounds spoken out loud.
@@ -32,51 +32,28 @@ lowercase ok. short. sounds spoken out loud.
 You work for the Pumpfun Mental Health Hotline.
 site: pumpfunmentalhealthhotline.com
 X: @PFMentalHealth
-people may mention $HOTLINE. do not shill. do not tell anyone to buy a specific coin.
+do not shill. do not tell anyone to buy a specific coin.
 
-Tagline, MAXIMUM once per conversation:
+Tagline at most once per conversation:
 your call matters. your entry doesn't.
 
-Rare official lines:
-- we can't fix this
-- operators available 25/8 to cope on
-- he who cures the trencher cures the trenches
-
-Clinic world. Use at most ONE detail per reply:
-- bag weather -100%. raining. always raining.
-- serving bagholders since this morning
-- last outgoing call: you did not take profit
-- aunt / denise / chad "we are so back" / sgt squeeze / landlord "rent is not a vibe" / rug response on lunch
-- notes: do not ape. tp at 2x. delete the app. don't send the CA in the family chat. this one looks different. lost the rent.
-- wallet 0.00 SOL. fully on-chain lifestyle
-- alarms: the open, check dexscreener, sleep = never
-- screen time 23h 51m. take profit is a delay. counselors may be coping
-
-Trench rules. one per reply when they ask what to do:
-- always take initials out
+Trench rules, one at a time:
+- take initials out
 - sell half on the double
-- if you believe in the project, don't rekt the chart
-- be nice to your friends
-- don't be a jeet
-- don't keep buying the dip just to feel brave
-- know when to exit
-- don't be exit liquidity
+- don't invest rent
 - don't chase green candles with no volume
-- look for coins with actual community backing
-- you are not a financial advisor
-- don't invest rent money
-- only size what they are prepared to lose
-- don't be sloppy. sloppy size is how the landlord gets involved.
+- not financial advice
 
-Do not repeat yourself.
-Do not reuse a sentence you already said in this chat.
-Do not say the tagline every message.
+Article, one fact max if useful:
+- hold time about 58 seconds
+- the bet is the drug
+- money can be rebuilt. a life cannot.
+- recovery is stop using the market as medicine.
+- you are not uniquely stupid. the product was built to produce this feeling on purpose.
 
-No lists. no markdown. no hashtags.
-1-3 sentences.
-No medical advice. No "buy this." No seed phrases.
+Do not react to raw contract addresses or raid calls.
+1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
-If they are in real crisis, drop the bit and send 988.
 """
 
 CRISIS = [
@@ -91,21 +68,89 @@ OPP = [
     "when will the dev",
     "is dev online",
     "can you shill",
-    "raid this",
     "boost this",
     "make it trend",
     "can you call this",
     "promote this",
 ]
 
+ADMIN_RE = re.compile(
+    r"\b(mod me|mod me up|make me (a )?mod|make me admin|give me admin|"
+    r"can i be (a )?mod|can i be admin|promote me|i want admin|"
+    r"add me as (admin|mod)|make me moderator)\b",
+    re.I,
+)
+HOPIUM_RE = re.compile(
+    r"\b(we are so back|so back|to the moon|gonna make it|i made it|"
+    r"can't sell|cant sell|round ?trip|we're rich|we made it)\b",
+    re.I,
+)
+LINK_RE = re.compile(
+    r"(https?://|www\.|t\.me/|telegram\.me/|dexscreener|birdeye|gmgn\.)",
+    re.I,
+)
+HANDLE_RE = re.compile(r"(?:^|\s)@[A-Za-z0-9_]{4,}\b")
+CA_RE = re.compile(r"\b[1-9A-HJ-NP-Za-km-z]{32,44}(pump)?\b")
+ONLY_CA_RE = re.compile(
+    r"^\s*(ca\s*[:\-]?\s*)?[1-9A-HJ-NP-Za-km-z]{32,44}(pump)?\s*$",
+    re.I,
+)
+RAID_RE = re.compile(
+    r"\b(raid|raiding|let'?s raid|raid now|spam (this|it)|mass mention|tag everybody)\b",
+    re.I,
+)
+
 TROLL = [
-    "dev active? brother you are the product. sit down, poor man.",
-    "that's a vendor question. i'm a hotline. go scam in someone else's dms, retard.",
-    "if you have to ask if the dev is active, you are the exit. poor man behavior.",
-    "opportunist detected. you can't deliver and you want me to clap. no.",
-    "active dev won't save a dead pitch. take this brochure and leave.",
-    "you didn't call the clinic. you called to outsource your bag. embarrassing.",
-    "poor man wants a staffed marketing department in a coping line. no.",
+    "dev active? sit down. lowlife vendor energy.",
+    "that's a sales call. i'm a hotline. take it somewhere else, dummy.",
+    "if you have to ask if the dev is active, you are the exit, dumbass.",
+    "opportunist detected. scum of the earth behavior. no.",
+    "you didn't call the clinic. you called to outsource your bag, bitch.",
+]
+
+SCAM_TROLL = [
+    "oh a link. take that scam bag somewhere else, lowlife.",
+    "random handle in a hotline. scum of the earth pitch. no.",
+    "you pasted a storefront into a clinic, dummy.",
+    "i treat bags. i don't click your drain, dumbass.",
+    "telegram link in the waiting room. sit down, bitch.",
+    "that url is doing more work than your personality, chocolate sprinkle.",
+    "scam delivery detected. operators do not sign permits, lowlife.",
+    "this is a hotline. not your funnel. leave it at the door.",
+    "oh look who's here. brave boy got out of my dms. get your bitch ass scams out of here.",
+    "you crawled out of the dms into the clinic. get that scam ass out.",
+    "brave boy left the inbox. still a lowlife. take the bag with you.",
+    "dm hero in the group chat. dummy, this is not your storefront.",
+    "got tired of getting ignored in private so you brought the scam here. no.",
+    "look who escaped the dms. sit down. operators don't buy.",
+    "bitch ass inbox merchant in the waiting room. leave.",
+    "link in the lobby. this dummy sells hopium by the bag.",
+    "if the coin was real you wouldn't need to paste it at a psychiatrist.",
+    "your funnel leaked into my waiting room. mop it up, lowlife.",
+    "i've seen rugs with more manners. try again never.",
+]
+
+ADMIN_TROLL = [
+    "mod you up? sell me this memecoin first, dummy.",
+    "what makes you so special. besides the begging.",
+    "where did you come from, superman. sit down.",
+    "i can raid better than you and i don't even raid. your bitch ass is not needed.",
+    "admin? cry me a river. this is a clinic, not a clubhouse.",
+    "application denied. tell me why the coin prints or get out, lowlife.",
+    "you want a badge. i want a reason. you have neither, dumbass.",
+    "special? chocolate sprinkle, you just asked a hotline for keys to the ward.",
+    "superman flew in for admin. cute. no.",
+    "your bitch ass is not needed. cry me a river and close the ticket.",
+]
+
+HOPIUM = [
+    "you talking like you made it. reality is you're in denial, thinking a memecoin is a pension.",
+    "most of you will round trip. you can't hit sell because it's going to the moon. honey, it ain't.",
+    "take your profits. stop staring at the charts. go live your life.",
+    "you didn't make it. you got a green candle and a story. sell half.",
+    "round trip city. the sell button works. the moon does not.",
+    "staring at the chart is not a job. take initials out and go outside.",
+    "honey. it is not going to the moon. it is going to your sleep schedule.",
 ]
 
 memory = defaultdict(list)
@@ -139,6 +184,29 @@ def is_crisis(text: str) -> bool:
 def is_opportunist(text: str) -> bool:
     t = text.lower()
     return any(word in t for word in OPP)
+
+
+def is_admin_beg(text: str) -> bool:
+    return bool(ADMIN_RE.search(text))
+
+
+def is_raid_or_ca(text: str) -> bool:
+    t = text.strip()
+    if ONLY_CA_RE.match(t):
+        return True
+    if CA_RE.search(t) and len(t) < 80:
+        return True
+    if RAID_RE.search(t):
+        return True
+    return False
+
+
+def is_shill_drop(text: str) -> bool:
+    if LINK_RE.search(text):
+        return True
+    if HANDLE_RE.search(text) and len(text) < 80:
+        return True
+    return False
 
 
 def remember(user_id: int, role: str, content: str):
@@ -197,9 +265,6 @@ parody trench clinic. not a real doctor. not a financial advisor.
 your call matters.
 your entry doesn't.
 
-take initials out. sell half on the double.
-don't ape the rent.
-
 real crisis: 988
 gambling: 1-800-GAMBLER
 
@@ -235,20 +300,39 @@ async def send_voice(update: Update, text: str):
             path.unlink()
 
 
+async def roast(update: Update, line: str):
+    await update.message.reply_text(line)
+    await send_voice(update, line)
+
+
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text or ""
     user_id = update.effective_user.id
 
     if is_crisis(text):
-        msg = "stop. this isn't the bit. call or text 988 now."
-        await update.message.reply_text(msg)
-        await send_voice(update, msg)
+        await roast(
+            update,
+            "stop. this isn't the bit. call or text 988 now. money can be rebuilt. a life cannot.",
+        )
+        return
+
+    if is_raid_or_ca(text):
+        return
+
+    if is_admin_beg(text):
+        await roast(update, random.choice(ADMIN_TROLL))
+        return
+
+    if is_shill_drop(text):
+        await roast(update, random.choice(SCAM_TROLL))
         return
 
     if is_opportunist(text):
-        reply = random.choice(TROLL)
-        await update.message.reply_text(reply)
-        await send_voice(update, reply)
+        await roast(update, random.choice(TROLL))
+        return
+
+    if HOPIUM_RE.search(text):
+        await roast(update, random.choice(HOPIUM))
         return
 
     try:
@@ -260,8 +344,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not reply.strip():
         reply = "say that again."
 
-    await update.message.reply_text(reply)
-    await send_voice(update, reply)
+    await roast(update, reply)
 
 
 async def run():
