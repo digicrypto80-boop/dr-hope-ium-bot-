@@ -84,10 +84,6 @@ CARE_RE = re.compile(
     r"down bad|wiped|no money|i'm broke|im broke|help me)\b",
     re.I,
 )
-ASK_PIC_RE = re.compile(
-    r"\b(look|see|what|thought|roast|comment|think|this|chart|pic|photo|image|rate|how|doctor)\b",
-    re.I,
-)
 LINK_RE = re.compile(
     r"(https?://|www\.|t\.me/|telegram\.me/|dexscreener|birdeye|gmgn\.)",
     re.I,
@@ -212,6 +208,14 @@ def add_fact(user_id: int, text: str):
         facts[user_id] = facts[user_id][-12:]
 
 
+def _clean(text: str) -> str:
+    t = str(text or "")
+    if "</think>" in t:
+        t = t.split("</think>", 1)[-1]
+    t = t.replace("<think>", "").strip()
+    return t
+
+
 def think(user_id: int, text: str, care: bool = False) -> str:
     add_fact(user_id, text)
     remember(user_id, "user", text)
@@ -237,14 +241,6 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     last_replies[user_id] = last_replies[user_id][-8:]
     remember(user_id, "assistant", reply)
     return reply[:500]
-
-
-def _clean(text: str) -> str:
-    t = str(text or "")
-    if "</think>" in t:
-        t = t.split("</think>", 1)[-1]
-    t = t.replace("<think>", "").strip()
-    return t
 
 
 def look_at_image(user_id: int, b64: str, question: str) -> str:
@@ -273,7 +269,6 @@ def look_at_image(user_id: int, b64: str, question: str) -> str:
                 messages=messages,
                 temperature=0.7,
                 max_tokens=220,
-                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             )
             reply = _clean(result.choices[0].message.content or "")
             if reply:
