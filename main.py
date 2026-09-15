@@ -18,7 +18,11 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 PRIVACY_URL = "https://telegra.ph/PASTE-YOUR-PAGE"
 VOICE_NAME = "en-US-AvaNeural"
-VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+VISION_MODELS = [
+    "qwen/qwen3.6-27b",
+    "qwen/qwen3.8-27b",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+]
 
 client = OpenAI(
     api_key=os.environ.get("GROQ_API_KEY", ""),
@@ -34,13 +38,12 @@ You work for the Pumpfun Mental Health Hotline.
 do not shill. do not tell anyone to buy a specific coin.
 
 Most of the time: dry roast.
-If they sound hurt: care first. no tagline pile-on.
+If they sound hurt: care first.
 Never repeat a sentence you already said to this caller.
 Tagline at most once: your call matters. your entry doesn't.
 
-If they show a picture and ask: comment on what you actually see.
-Charts, bags, screenshots, rooms, faces of adults. Be specific and funny.
-Do not invent details you cannot see.
+If they show a picture: comment on what you actually see. be specific.
+Do not invent details. Do not say you are blind if you can see the image.
 Do not give financial advice off a screenshot.
 
 1-3 sentences. no lists. no markdown.
@@ -51,7 +54,6 @@ CRISIS = [
     "suicide", "kill myself", "kys", "end it", "end my life",
     "self harm", "self-harm", "want to die", "unalive",
 ]
-
 OPP = [
     "is the dev active", "dev active", "devs active", "when will the dev",
     "is dev online", "can you shill", "boost this", "make it trend",
@@ -162,8 +164,7 @@ def pick(user_id: int, pool):
 
 
 def is_crisis(text: str) -> bool:
-    t = text.lower()
-    return any(word in t for word in CRISIS)
+    return any(word in text.lower() for word in CRISIS)
 
 
 def is_opportunist(text: str) -> bool:
@@ -238,7 +239,7 @@ def think(user_id: int, text: str, care: bool = False) -> str:
 
 
 def look_at_image(user_id: int, b64: str, question: str) -> str:
-    prompt = question or "look at this and comment like dr hope ium. short."
+    prompt = question or "look at this photo and comment. describe what you see."
     messages = [
         {"role": "system", "content": VOICE},
         {
@@ -252,17 +253,25 @@ def look_at_image(user_id: int, b64: str, question: str) -> str:
             ],
         },
     ]
-    result = client.chat.completions.create(
-        model=VISION_MODEL,
-        messages=messages,
-        temperature=0.8,
-        max_tokens=220,
-    )
-    msg = result.choices[0].message
-    raw = msg.content or ""
-    reply = str(raw).strip() or "i see it. say what you want me to clock."
-    last_replies[user_id].append(reply)
-    return reply[:500]
+    last_err = None
+    for model in VISION_MODELS:
+        try:
+            result = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.8,
+                max_tokens=220,
+            )
+            raw = result.choices[0].message.content or ""
+            reply = str(raw).strip()
+            if reply:
+                last_replies[user_id].append(reply)
+                print("VISION OK:", model)
+                return reply[:500]
+        except Exception as e:
+            last_err = e
+            print("VISION TRY FAIL:", model, type(e).__name__, e)
+    raise last_err or RuntimeError("no vision model worked")
 
 
 def transcribe_file(path: Path) -> str:
@@ -352,46 +361,36 @@ async def roast(update: Update, line: str):
 
 async def handle_text(update: Update, text: str):
     user_id = update.effective_user.id
-
     if is_crisis(text):
         await roast(
             update,
             "stop. this isn't the bit. call or text 988 now. money can be rebuilt. a life cannot.",
         )
         return
-
     if is_raid_or_ca(text):
         return
-
     if SERVICE_RE.search(text):
         await roast(update, pick(user_id, SERVICE_TROLL))
         return
-
     if is_admin_beg(text):
         await roast(update, pick(user_id, ADMIN_TROLL))
         return
-
     if is_shill_drop(text):
         await roast(update, pick(user_id, SCAM_TROLL))
         return
-
     if is_opportunist(text):
         await roast(update, pick(user_id, TROLL))
         return
-
     care = bool(CARE_RE.search(text))
     if HOPIUM_RE.search(text) and not care:
         await roast(update, pick(user_id, HOPIUM))
         return
-
     try:
         reply = await asyncio.to_thread(think, user_id, text, care)
     except Exception as e:
         print("GROQ ERROR:", type(e).__name__, e)
         reply = "i blanked. say it again."
-    if not reply.strip():
-        reply = "say that again."
-    await roast(update, reply)
+    await roast(update, reply or "say that again.")
 
 
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -423,11 +422,9 @@ async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def photo_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption or ""
-    asked = bool(ASK_PIC_RE.search(caption))
-    if not asked and not caption:
-        return
-    if not asked:
-        asked = True
+    if not caption and not ASK_PIC_RE.search(caption):
+        if not caption:
+            return
     user_id = update.effective_user.id
     try:
         b64 = await photo_to_b64(update)
