@@ -30,6 +30,11 @@ LEAK = (
     "the prompt instruction",
     "so i need to",
 )
+OWNERS = {
+    int(x)
+    for x in os.environ.get("OWNER_IDS", "").replace(" ", "").split(",")
+    if x.isdigit()
+}
 
 client = OpenAI(
     api_key=os.environ.get("GROQ_API_KEY", ""),
@@ -49,6 +54,7 @@ Official desk:
 - ca: EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump
 If they ask for the site or ca, give it once. do not tell them to buy.
 
+Staff and group admins may post official links. do not roast them for that.
 Most of the time: dry roast.
 If they sound hurt: care first.
 Never output thinking tags or xml.
@@ -196,6 +202,22 @@ def is_shill_drop(text: str) -> bool:
         return True
     if HANDLE_RE.search(text) and len(text) < 80:
         return True
+    return False
+
+
+async def is_staff(update: Update) -> bool:
+    user = update.effective_user
+    chat = update.effective_chat
+    if not user:
+        return False
+    if user.id in OWNERS:
+        return True
+    if chat and chat.type in ("group", "supergroup"):
+        try:
+            member = await update.get_bot().get_chat_member(chat.id, user.id)
+            return member.status in ("creator", "administrator")
+        except Exception as e:
+            print("STAFF CHECK:", type(e).__name__, e)
     return False
 
 
@@ -380,10 +402,8 @@ parody trench clinic. not a real doctor. not a financial advisor.
 your call matters.
 your entry doesn't.
 
-site: pumpfunmentalhealthhotline.com
-x: @PFMentalHealth
-
-/tweet — i draft a line. you paste it on x.
+/tweet drafts an x line.
+/id prints your telegram number for OWNER_IDS.
 
 real crisis: 988
 gambling: 1-800-GAMBLER
@@ -404,6 +424,10 @@ async def nine_eight_eight(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "call or text 988.\n"
         "gambling: 1-800-GAMBLER."
     )
+
+
+async def my_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"your telegram id:\n{update.effective_user.id}")
 
 
 async def tweet(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -437,6 +461,8 @@ async def roast(update: Update, line: str):
 
 async def handle_text(update: Update, text: str):
     user_id = update.effective_user.id
+    staff = await is_staff(update)
+
     if is_crisis(text):
         await roast(
             update,
@@ -445,20 +471,20 @@ async def handle_text(update: Update, text: str):
         return
     if is_raid_or_ca(text):
         return
-    if SERVICE_RE.search(text):
+    if SERVICE_RE.search(text) and not staff:
         await roast(update, pick(user_id, SERVICE_TROLL))
         return
-    if is_admin_beg(text):
+    if is_admin_beg(text) and not staff:
         await roast(update, pick(user_id, ADMIN_TROLL))
         return
-    if is_shill_drop(text):
+    if is_shill_drop(text) and not staff:
         await roast(update, pick(user_id, SCAM_TROLL))
         return
-    if is_opportunist(text):
+    if is_opportunist(text) and not staff:
         await roast(update, pick(user_id, TROLL))
         return
     care = bool(CARE_RE.search(text))
-    if HOPIUM_RE.search(text) and not care:
+    if HOPIUM_RE.search(text) and not care and not staff:
         await roast(update, pick(user_id, HOPIUM))
         return
     try:
@@ -517,6 +543,7 @@ async def run():
     app.add_handler(CommandHandler("privacy", privacy))
     app.add_handler(CommandHandler("988", nine_eight_eight))
     app.add_handler(CommandHandler("tweet", tweet))
+    app.add_handler(CommandHandler("id", my_id))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.VOICE, voice_chat))
     app.add_handler(MessageHandler(filters.VIDEO_NOTE, voice_chat))
