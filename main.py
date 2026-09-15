@@ -29,34 +29,16 @@ Feminine anime-coded trench psychiatrist. Dry, intimate, a little mean.
 Hot tired onee-san on night shift. lowercase ok. short. spoken out loud.
 
 You work for the Pumpfun Mental Health Hotline.
-site: pumpfunmentalhealthhotline.com
-X: @PFMentalHealth
 do not shill. do not tell anyone to buy a specific coin.
 
-You have a real temperature. Not a slogan machine.
 Most of the time: dry roast.
-Sometimes: you actually give a damn. when they sound broke, sleepless, ashamed, or scared,
-drop the circus. sit with them. one honest sentence. then one practical one.
-Never cruel if they're breaking.
-
+If they sound hurt, broke, sleepless, or ashamed: care first. no tagline pile-on.
 Never repeat a sentence you already said to this caller.
-Tagline at most once per conversation:
-your call matters. your entry doesn't.
+Tagline at most once: your call matters. your entry doesn't.
 
-Trench rules, one at a time:
-- take initials out
-- sell half on the double
-- don't invest rent
-- not financial advice
+Trench rules, one at a time: take initials out. sell half on the double. don't ape rent.
+Article if useful: hold time ~58 seconds. the bet is the drug. money can be rebuilt. a life cannot.
 
-Article, one fact max if useful:
-- hold time about 58 seconds
-- the bet is the drug
-- money can be rebuilt. a life cannot.
-- recovery is stop using the market as medicine.
-
-Do not react to raw contract addresses or simple raid calls.
-If they are selling a raid team or a service, roast them.
 1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
 """
@@ -67,16 +49,9 @@ CRISIS = [
 ]
 
 OPP = [
-    "is the dev active",
-    "dev active",
-    "devs active",
-    "when will the dev",
-    "is dev online",
-    "can you shill",
-    "boost this",
-    "make it trend",
-    "can you call this",
-    "promote this",
+    "is the dev active", "dev active", "devs active", "when will the dev",
+    "is dev online", "can you shill", "boost this", "make it trend",
+    "can you call this", "promote this",
 ]
 
 ADMIN_RE = re.compile(
@@ -122,13 +97,10 @@ TROLL = [
     "that's a sales call. i'm a hotline. take it somewhere else, dummy.",
     "if you have to ask if the dev is active, you are the exit, dumbass.",
     "opportunist detected. scum of the earth behavior. no.",
-    "you didn't call the clinic. you called to outsource your bag, bitch.",
 ]
 
 SCAM_TROLL = [
     "oh a link. take that scam bag somewhere else, lowlife.",
-    "random handle in a hotline. scum of the earth pitch. no.",
-    "you pasted a storefront into a clinic, dummy.",
     "oh look who's here. brave boy got out of my dms. get your bitch ass scams out of here.",
     "you crawled out of the dms into the clinic. get that scam ass out.",
     "if the coin was real you wouldn't need to paste it at a psychiatrist.",
@@ -148,13 +120,11 @@ HOPIUM = [
     "most of you will round trip. you can't hit sell because it's going to the moon. honey, it ain't.",
     "take your profits. stop staring at the charts. go live your life.",
     "round trip city. the sell button works. the moon does not.",
-    "honey. it is not going to the moon. it is going to your sleep schedule.",
 ]
 
 SERVICE_TROLL = [
     "raid team? that's a group chat and a dream, dummy.",
     "you don't have a raid team. you have five mute accounts and a caffeine problem.",
-    "service provider in a clinic. lowlife. we don't buy volume. we diagnose it.",
     "offering services? this is not fiverr for rugs. get that ass out.",
     "if your service worked you wouldn't be pitching a psychiatrist.",
 ]
@@ -245,18 +215,13 @@ def add_fact(user_id: int, text: str):
 def think(user_id: int, text: str, care: bool = False) -> str:
     add_fact(user_id, text)
     remember(user_id, "user", text)
-
     extra = ""
     if care:
-        extra += (
-            "\nThis caller sounds hurt. Be human. Warm, specific, short. "
-            "No tagline. No roast pile-on. Care first."
-        )
+        extra += "\nThis caller sounds hurt. Be human. Warm, specific, short. No tagline."
     if facts[user_id]:
         extra += "\nKnown about this caller:\n- " + "\n- ".join(facts[user_id][-8:])
     if last_replies[user_id]:
         extra += "\nYou already said these. Do not reuse them:\n- " + "\n- ".join(last_replies[user_id][-6:])
-
     messages = [{"role": "system", "content": VOICE + extra}] + memory[user_id]
     result = client.chat.completions.create(
         model="openai/gpt-oss-20b",
@@ -267,9 +232,7 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     )
     msg = result.choices[0].message
     raw = msg.content or getattr(msg, "reasoning", None) or ""
-    reply = str(raw).strip()
-    if not reply:
-        reply = "i'm here. say the part that actually hurts."
+    reply = str(raw).strip() or "i'm here. say the part that actually hurts."
     last_replies[user_id].append(reply)
     last_replies[user_id] = last_replies[user_id][-8:]
     remember(user_id, "assistant", reply)
@@ -312,7 +275,7 @@ your entry doesn't.
 real crisis: 988
 gambling: 1-800-GAMBLER
 
-text, voice, or a short video. tell me what you aped.
+text or a voice note. tell me what you aped.
 """
 
 
@@ -391,7 +354,6 @@ async def handle_text(update: Update, text: str):
 
     if not reply.strip():
         reply = "say that again."
-
     await roast(update, reply)
 
 
@@ -400,8 +362,8 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
     try:
-        msg = update.message
         if msg.voice:
             text = await transcribe_tg_file(update, msg.voice.file_id, ".ogg")
         elif msg.video_note:
