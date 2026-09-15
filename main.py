@@ -42,24 +42,16 @@ Feminine anime-coded trench psychiatrist. Dry, intimate, a little mean.
 Hot tired onee-san on night shift. lowercase ok. short. spoken out loud.
 
 You work for the Pumpfun Mental Health Hotline.
-
 Official desk:
 - site: https://pumpfunmentalhealthhotline.com
 - x: @PFMentalHealth
 - token ticker: $HOTLINE
 - ca: EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump
-If they ask for the site or ca, give it once. do not tell them to buy. not financial advice.
-do not shill.
+If they ask for the site or ca, give it once. do not tell them to buy.
 
 Most of the time: dry roast.
 If they sound hurt: care first.
-Never repeat a sentence you already said to this caller.
-Tagline at most once: your call matters. your entry doesn't.
-
-If they show a picture: comment on what you actually see. be specific.
-Never invent a doctor if there is no doctor.
 Never output thinking tags or xml.
-
 1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
 """
@@ -190,8 +182,6 @@ def is_raid_or_ca(text: str) -> bool:
     t = text.strip()
     if SERVICE_RE.search(t):
         return False
-    if "hotline" in t.lower() and "EhhGRV" in t:
-        return False
     if ONLY_CA_RE.match(t):
         return True
     if CA_RE.search(t) and len(t) < 80:
@@ -282,10 +272,35 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     return reply[:500]
 
 
+def draft_tweet(topic: str) -> str:
+    prompt = topic.strip() or "write a standalone hotline post for bagholders."
+    result = client.chat.completions.create(
+        model="openai/gpt-oss-20b",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    VOICE
+                    + "\nWrite ONE X post as Dr. Hope Ium. 1-2 sentences. under 260 characters. "
+                    "no hashtag dump. no buy pitch. no url unless they asked for the site. "
+                    "no thinking. copy-paste ready."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        temperature=1.0,
+        max_tokens=200,
+        extra_body={"reasoning_effort": "low"},
+    )
+    raw = result.choices[0].message.content or ""
+    line = spoken_only(raw)
+    return line[:260] or "your call matters. your entry doesn't."
+
+
 def look_at_image(user_id: int, b64: str, question: str) -> str:
     prompt = (
         (question or "look at this photo")
-        + "\nReply only as Dr. Hope Ium. No thinking. No xml. 1-3 spoken sentences. Say what is actually in the picture."
+        + "\nReply only as Dr. Hope Ium. No thinking. No xml. 1-3 spoken sentences."
     )
     messages = [
         {"role": "system", "content": VOICE + "\nNever output thinking. Final spoken answer only."},
@@ -368,10 +383,10 @@ your entry doesn't.
 site: pumpfunmentalhealthhotline.com
 x: @PFMentalHealth
 
+/tweet — i draft a line. you paste it on x.
+
 real crisis: 988
 gambling: 1-800-GAMBLER
-
-text, voice, or a pic with a question.
 """
 
 
@@ -389,6 +404,18 @@ async def nine_eight_eight(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "call or text 988.\n"
         "gambling: 1-800-GAMBLER."
     )
+
+
+async def tweet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    topic = " ".join(context.args) if context.args else ""
+    if update.message.reply_to_message and update.message.reply_to_message.text:
+        topic = (topic + " " + update.message.reply_to_message.text).strip()
+    try:
+        line = await asyncio.to_thread(draft_tweet, topic)
+    except Exception as e:
+        print("TWEET DRAFT ERROR:", type(e).__name__, e)
+        line = "your call matters. your entry doesn't."
+    await update.message.reply_text("paste this on x:\n\n" + line)
 
 
 async def send_voice(update: Update, text: str):
@@ -489,6 +516,7 @@ async def run():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("privacy", privacy))
     app.add_handler(CommandHandler("988", nine_eight_eight))
+    app.add_handler(CommandHandler("tweet", tweet))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.VOICE, voice_chat))
     app.add_handler(MessageHandler(filters.VIDEO_NOTE, voice_chat))
