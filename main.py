@@ -43,7 +43,8 @@ Never repeat a sentence you already said to this caller.
 Tagline at most once: your call matters. your entry doesn't.
 
 If they show a picture: comment on what you actually see. be specific.
-Do not invent details. Do not say you are blind if you can see the image.
+Never invent a doctor if there is no doctor.
+Never output thinking tags or xml.
 Do not give financial advice off a screenshot.
 
 1-3 sentences. no lists. no markdown.
@@ -84,7 +85,7 @@ CARE_RE = re.compile(
     re.I,
 )
 ASK_PIC_RE = re.compile(
-    r"\b(look|see|what|thought|roast|comment|think|this|chart|pic|photo|image|rate|how)\b",
+    r"\b(look|see|what|thought|roast|comment|think|this|chart|pic|photo|image|rate|how|doctor)\b",
     re.I,
 )
 LINK_RE = re.compile(
@@ -231,17 +232,28 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     )
     msg = result.choices[0].message
     raw = msg.content or getattr(msg, "reasoning", None) or ""
-    reply = str(raw).strip() or "i'm here. say the part that actually hurts."
+    reply = _clean(raw) or "i'm here. say the part that actually hurts."
     last_replies[user_id].append(reply)
     last_replies[user_id] = last_replies[user_id][-8:]
     remember(user_id, "assistant", reply)
     return reply[:500]
 
 
+def _clean(text: str) -> str:
+    t = str(text or "")
+    if "</think>" in t:
+        t = t.split("</think>", 1)[-1]
+    t = t.replace("<think>", "").strip()
+    return t
+
+
 def look_at_image(user_id: int, b64: str, question: str) -> str:
-    prompt = question or "look at this photo and comment. describe what you see."
+    prompt = (
+        (question or "look at this photo")
+        + "\nReply only as Dr. Hope Ium. No thinking. No xml. 1-3 spoken sentences. Say what is actually in the picture."
+    )
     messages = [
-        {"role": "system", "content": VOICE},
+        {"role": "system", "content": VOICE + "\nNever output <think> tags. Final answer only."},
         {
             "role": "user",
             "content": [
@@ -259,11 +271,11 @@ def look_at_image(user_id: int, b64: str, question: str) -> str:
             result = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                temperature=0.8,
+                temperature=0.7,
                 max_tokens=220,
+                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             )
-            raw = result.choices[0].message.content or ""
-            reply = str(raw).strip()
+            reply = _clean(result.choices[0].message.content or "")
             if reply:
                 last_replies[user_id].append(reply)
                 print("VISION OK:", model)
@@ -422,13 +434,13 @@ async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def photo_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption or ""
-    if not caption and not ASK_PIC_RE.search(caption):
-        if not caption:
-            return
-    user_id = update.effective_user.id
+    if not caption:
+        return
     try:
         b64 = await photo_to_b64(update)
-        reply = await asyncio.to_thread(look_at_image, user_id, b64, caption)
+        reply = await asyncio.to_thread(
+            look_at_image, update.effective_user.id, b64, caption
+        )
     except Exception as e:
         print("VISION ERROR:", type(e).__name__, e)
         reply = "i see a pic but my eyes glitched. describe it in one sentence."
