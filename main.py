@@ -486,6 +486,7 @@ async def run():
     app.add_handler(MessageHandler(filters.PHOTO, photo_chat))
     print("Dr. Hope Ium is on the clock")
     async with app:
+        await app.bot.delete_webhook(drop_pending_updates=True)
         await app.start()
         await app.updater.start_polling()
         await asyncio.Event().wait()
