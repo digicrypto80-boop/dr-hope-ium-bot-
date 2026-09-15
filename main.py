@@ -23,6 +23,13 @@ VISION_MODELS = [
     "qwen/qwen3.8-27b",
     "meta-llama/llama-4-scout-17b-16e-instruct",
 ]
+LEAK = (
+    "the user is asking",
+    "i need to look",
+    "let me draft",
+    "the prompt instruction",
+    "so i need to",
+)
 
 client = OpenAI(
     api_key=os.environ.get("GROQ_API_KEY", ""),
@@ -216,6 +223,30 @@ def _clean(text: str) -> str:
     return t
 
 
+def spoken_only(raw: str) -> str:
+    t = _clean(raw)
+    low = t.lower()
+    if "let me draft:" in low:
+        t = t.split(":", 1)[-1].strip().strip('"')
+        low = t.lower()
+    if any(x in low for x in LEAK) or t.count("\n") > 3:
+        result = client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Rewrite as Dr. Hope Ium. 1-3 lowercase spoken sentences. no thinking. no xml.",
+                },
+                {"role": "user", "content": t[:800]},
+            ],
+            temperature=0.7,
+            max_tokens=120,
+            extra_body={"reasoning_effort": "low"},
+        )
+        t = _clean(result.choices[0].message.content or t)
+    return t[:500]
+
+
 def think(user_id: int, text: str, care: bool = False) -> str:
     add_fact(user_id, text)
     remember(user_id, "user", text)
@@ -236,7 +267,7 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     )
     msg = result.choices[0].message
     raw = msg.content or getattr(msg, "reasoning", None) or ""
-    reply = _clean(raw) or "i'm here. say the part that actually hurts."
+    reply = spoken_only(raw) or "i'm here. say the part that actually hurts."
     last_replies[user_id].append(reply)
     last_replies[user_id] = last_replies[user_id][-8:]
     remember(user_id, "assistant", reply)
@@ -249,7 +280,7 @@ def look_at_image(user_id: int, b64: str, question: str) -> str:
         + "\nReply only as Dr. Hope Ium. No thinking. No xml. 1-3 spoken sentences. Say what is actually in the picture."
     )
     messages = [
-        {"role": "system", "content": VOICE + "\nNever output <think> tags. Final answer only."},
+        {"role": "system", "content": VOICE + "\nNever output thinking. Final spoken answer only."},
         {
             "role": "user",
             "content": [
@@ -270,7 +301,7 @@ def look_at_image(user_id: int, b64: str, question: str) -> str:
                 temperature=0.7,
                 max_tokens=220,
             )
-            reply = _clean(result.choices[0].message.content or "")
+            reply = spoken_only(result.choices[0].message.content or "")
             if reply:
                 last_replies[user_id].append(reply)
                 print("VISION OK:", model)
