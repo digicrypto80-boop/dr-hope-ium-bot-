@@ -1,5 +1,6 @@
 import os
 import re
+import base64
 import random
 import asyncio
 import threading
@@ -17,6 +18,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 PRIVACY_URL = "https://telegra.ph/PASTE-YOUR-PAGE"
 VOICE_NAME = "en-US-AvaNeural"
+VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 client = OpenAI(
     api_key=os.environ.get("GROQ_API_KEY", ""),
@@ -32,12 +34,14 @@ You work for the Pumpfun Mental Health Hotline.
 do not shill. do not tell anyone to buy a specific coin.
 
 Most of the time: dry roast.
-If they sound hurt, broke, sleepless, or ashamed: care first. no tagline pile-on.
+If they sound hurt: care first. no tagline pile-on.
 Never repeat a sentence you already said to this caller.
 Tagline at most once: your call matters. your entry doesn't.
 
-Trench rules, one at a time: take initials out. sell half on the double. don't ape rent.
-Article if useful: hold time ~58 seconds. the bet is the drug. money can be rebuilt. a life cannot.
+If they show a picture and ask: comment on what you actually see.
+Charts, bags, screenshots, rooms, faces of adults. Be specific and funny.
+Do not invent details you cannot see.
+Do not give financial advice off a screenshot.
 
 1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
@@ -77,6 +81,10 @@ CARE_RE = re.compile(
     r"down bad|wiped|no money|i'm broke|im broke|help me)\b",
     re.I,
 )
+ASK_PIC_RE = re.compile(
+    r"\b(look|see|what|thought|roast|comment|think|this|chart|pic|photo|image|rate|how)\b",
+    re.I,
+)
 LINK_RE = re.compile(
     r"(https?://|www\.|t\.me/|telegram\.me/|dexscreener|birdeye|gmgn\.)",
     re.I,
@@ -95,37 +103,27 @@ RAID_RE = re.compile(
 TROLL = [
     "dev active? sit down. lowlife vendor energy.",
     "that's a sales call. i'm a hotline. take it somewhere else, dummy.",
-    "if you have to ask if the dev is active, you are the exit, dumbass.",
     "opportunist detected. scum of the earth behavior. no.",
 ]
-
 SCAM_TROLL = [
     "oh a link. take that scam bag somewhere else, lowlife.",
     "oh look who's here. brave boy got out of my dms. get your bitch ass scams out of here.",
-    "you crawled out of the dms into the clinic. get that scam ass out.",
     "if the coin was real you wouldn't need to paste it at a psychiatrist.",
-    "i've seen rugs with more manners. try again never.",
 ]
-
 ADMIN_TROLL = [
     "mod you up? sell me this memecoin first, dummy.",
     "what makes you so special. besides the begging.",
     "where did you come from, superman. sit down.",
     "admin? cry me a river. this is a clinic, not a clubhouse.",
-    "your bitch ass is not needed. cry me a river and close the ticket.",
 ]
-
 HOPIUM = [
     "you talking like you made it. reality is you're in denial, thinking a memecoin is a pension.",
     "most of you will round trip. you can't hit sell because it's going to the moon. honey, it ain't.",
     "take your profits. stop staring at the charts. go live your life.",
-    "round trip city. the sell button works. the moon does not.",
 ]
-
 SERVICE_TROLL = [
     "raid team? that's a group chat and a dream, dummy.",
     "you don't have a raid team. you have five mute accounts and a caffeine problem.",
-    "offering services? this is not fiverr for rugs. get that ass out.",
     "if your service worked you wouldn't be pitching a psychiatrist.",
 ]
 
@@ -239,6 +237,34 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     return reply[:500]
 
 
+def look_at_image(user_id: int, b64: str, question: str) -> str:
+    prompt = question or "look at this and comment like dr hope ium. short."
+    messages = [
+        {"role": "system", "content": VOICE},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+                },
+            ],
+        },
+    ]
+    result = client.chat.completions.create(
+        model=VISION_MODEL,
+        messages=messages,
+        temperature=0.8,
+        max_tokens=220,
+    )
+    msg = result.choices[0].message
+    raw = msg.content or ""
+    reply = str(raw).strip() or "i see it. say what you want me to clock."
+    last_replies[user_id].append(reply)
+    return reply[:500]
+
+
 def transcribe_file(path: Path) -> str:
     with path.open("rb") as audio:
         result = client.audio.transcriptions.create(
@@ -254,6 +280,18 @@ async def transcribe_tg_file(update: Update, file_id: str, suffix: str) -> str:
         tg_file = await update.get_bot().get_file(file_id)
         await tg_file.download_to_drive(str(path))
         return await asyncio.to_thread(transcribe_file, path)
+    finally:
+        if path.exists():
+            path.unlink()
+
+
+async def photo_to_b64(update: Update) -> str:
+    photo = update.message.photo[-1]
+    path = Path("/tmp") / f"pic_{update.effective_user.id}.jpg"
+    try:
+        tg_file = await update.get_bot().get_file(photo.file_id)
+        await tg_file.download_to_drive(str(path))
+        return base64.b64encode(path.read_bytes()).decode("ascii")
     finally:
         if path.exists():
             path.unlink()
@@ -275,7 +313,7 @@ your entry doesn't.
 real crisis: 988
 gambling: 1-800-GAMBLER
 
-text or a voice note. tell me what you aped.
+text, voice, or a pic with a question.
 """
 
 
@@ -351,7 +389,6 @@ async def handle_text(update: Update, text: str):
     except Exception as e:
         print("GROQ ERROR:", type(e).__name__, e)
         reply = "i blanked. say it again."
-
     if not reply.strip():
         reply = "say that again."
     await roast(update, reply)
@@ -384,6 +421,23 @@ async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await handle_text(update, text)
 
 
+async def photo_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    caption = update.message.caption or ""
+    asked = bool(ASK_PIC_RE.search(caption))
+    if not asked and not caption:
+        return
+    if not asked:
+        asked = True
+    user_id = update.effective_user.id
+    try:
+        b64 = await photo_to_b64(update)
+        reply = await asyncio.to_thread(look_at_image, user_id, b64, caption)
+    except Exception as e:
+        print("VISION ERROR:", type(e).__name__, e)
+        reply = "i see a pic but my eyes glitched. describe it in one sentence."
+    await roast(update, reply)
+
+
 async def run():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -394,6 +448,7 @@ async def run():
     app.add_handler(MessageHandler(filters.VIDEO_NOTE, voice_chat))
     app.add_handler(MessageHandler(filters.VIDEO, voice_chat))
     app.add_handler(MessageHandler(filters.AUDIO, voice_chat))
+    app.add_handler(MessageHandler(filters.PHOTO, photo_chat))
     print("Dr. Hope Ium is on the clock")
     async with app:
         await app.start()
