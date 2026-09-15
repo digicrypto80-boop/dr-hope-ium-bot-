@@ -55,9 +55,6 @@ Official desk:
 If they ask for the site or ca, give it once. do not tell them to buy.
 
 Staff and group admins may post official links. do not roast them for that.
-Most of the time: dry roast.
-If they sound hurt: care first.
-Never output thinking tags or xml.
 1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
 """
@@ -171,6 +168,11 @@ def pick(user_id: int, pool):
     return line
 
 
+def is_private(update: Update) -> bool:
+    chat = update.effective_chat
+    return bool(chat and chat.type == "private")
+
+
 def is_crisis(text: str) -> bool:
     return any(word in text.lower() for word in CRISIS)
 
@@ -203,6 +205,17 @@ def is_shill_drop(text: str) -> bool:
     if HANDLE_RE.search(text) and len(text) < 80:
         return True
     return False
+
+
+def addressed_to_bot(update: Update, text: str) -> bool:
+    bot = update.get_bot()
+    uname = (bot.username or "").lower()
+    if uname and f"@{uname.lower()}" in (text or "").lower():
+        return True
+    msg = update.message
+    if not msg or not msg.reply_to_message or not msg.reply_to_message.from_user:
+        return False
+    return msg.reply_to_message.from_user.id == bot.id
 
 
 async def is_staff(update: Update) -> bool:
@@ -304,8 +317,7 @@ def draft_tweet(topic: str) -> str:
                 "content": (
                     VOICE
                     + "\nWrite ONE X post as Dr. Hope Ium. 1-2 sentences. under 260 characters. "
-                    "no hashtag dump. no buy pitch. no url unless they asked for the site. "
-                    "no thinking. copy-paste ready."
+                    "no hashtag dump. no buy pitch. no thinking."
                 ),
             },
             {"role": "user", "content": prompt},
@@ -314,26 +326,18 @@ def draft_tweet(topic: str) -> str:
         max_tokens=200,
         extra_body={"reasoning_effort": "low"},
     )
-    raw = result.choices[0].message.content or ""
-    line = spoken_only(raw)
-    return line[:260] or "your call matters. your entry doesn't."
+    return spoken_only(result.choices[0].message.content or "")[:260] or "your call matters. your entry doesn't."
 
 
 def look_at_image(user_id: int, b64: str, question: str) -> str:
-    prompt = (
-        (question or "look at this photo")
-        + "\nReply only as Dr. Hope Ium. No thinking. No xml. 1-3 spoken sentences."
-    )
+    prompt = (question or "look at this photo") + "\nReply only as Dr. Hope Ium. 1-3 spoken sentences."
     messages = [
         {"role": "system", "content": VOICE + "\nNever output thinking. Final spoken answer only."},
         {
             "role": "user",
             "content": [
                 {"type": "text", "text": prompt},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
-                },
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
             ],
         },
     ]
@@ -397,13 +401,7 @@ async def speak(text: str, path: Path):
 START = """hi. i'm Dr. Hope Ium.
 Pumpfun Mental Health Hotline.
 
-parody trench clinic. not a real doctor. not a financial advisor.
-
-your call matters.
-your entry doesn't.
-
-/tweet drafts an x line.
-/id prints your telegram number for OWNER_IDS.
+in groups i only talk if you @ me, reply to me, or drop a scam link.
 
 real crisis: 988
 gambling: 1-800-GAMBLER
@@ -420,9 +418,7 @@ async def privacy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def nine_eight_eight(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "this part isn't a joke.\n\n"
-        "call or text 988.\n"
-        "gambling: 1-800-GAMBLER."
+        "this part isn't a joke.\n\ncall or text 988.\ngambling: 1-800-GAMBLER."
     )
 
 
@@ -462,6 +458,8 @@ async def roast(update: Update, line: str):
 async def handle_text(update: Update, text: str):
     user_id = update.effective_user.id
     staff = await is_staff(update)
+    private = is_private(update)
+    addressed = addressed_to_bot(update, text)
 
     if is_crisis(text):
         await roast(
@@ -469,6 +467,14 @@ async def handle_text(update: Update, text: str):
             "stop. this isn't the bit. call or text 988 now. money can be rebuilt. a life cannot.",
         )
         return
+
+    if not private and is_shill_drop(text) and not staff:
+        await roast(update, pick(user_id, SCAM_TROLL))
+        return
+
+    if not private and not addressed:
+        return
+
     if is_raid_or_ca(text):
         return
     if SERVICE_RE.search(text) and not staff:
@@ -500,6 +506,8 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_private(update) and not addressed_to_bot(update, update.message.caption or ""):
+        return
     msg = update.message
     try:
         if msg.voice:
@@ -524,7 +532,9 @@ async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def photo_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption or ""
-    if not caption:
+    if not is_private(update) and not addressed_to_bot(update, caption):
+        return
+    if not caption and is_private(update):
         return
     try:
         b64 = await photo_to_b64(update)
