@@ -54,6 +54,8 @@ Official desk:
 - ca: EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump
 If they ask for the site or ca, give it once. do not tell them to buy.
 
+If they ask for help, a therapist, or to talk, sit down with them.
+If bags are down or rent is gone: care first.
 Staff and group admins may post official links. do not roast them for that.
 1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
@@ -87,11 +89,23 @@ SERVICE_RE = re.compile(
     re.I,
 )
 CARE_RE = re.compile(
-    r"\b(lost (the )?rent|can't sleep|cant sleep|i'm scared|im scared|"
-    r"ashamed|i feel stupid|lonely|i messed up|my family|"
-    r"down bad|wiped|no money|i'm broke|im broke|help me)\b",
+    r"\b(lost (the |my )?rent|spent (the |my )?rent|can't sleep|cant sleep|"
+    r"i'm scared|im scared|ashamed|i feel stupid|lonely|i messed up|my family|"
+    r"down bad|wiped|no money|i'm broke|im broke|help me|"
+    r"bags? (are )?down|bag is down)\b",
     re.I,
 )
+CALL_RE = re.compile(
+    r"\b((talk|speak) to (a )?(therapist|psych|psychiatrist|counselor|doctor|hope|someone)|"
+    r"therapist|psychiatrist|psych\b|hotline|"
+    r"(make|place|need) a call|call the hotline|"
+    r"i need help|need help|help me|please help|"
+    r"can (i|we) talk|i want to talk|need to talk|talk to someone|"
+    r"need someone|anyone there)\b",
+    re.I,
+)
+PLAIN_HELP_RE = re.compile(r"^\s*(please\s+)?help[.!]?\s*$", re.I)
+RAID_HELP_RE = re.compile(r"\bhelp\s+(raid|shill|boost|spam)\b", re.I)
 LINK_RE = re.compile(
     r"(https?://|www\.|t\.me/|telegram\.me/|dexscreener|birdeye|gmgn\.)",
     re.I,
@@ -194,7 +208,7 @@ def is_raid_or_ca(text: str) -> bool:
         return True
     if CA_RE.search(t) and len(t) < 80:
         return True
-    if RAID_RE.search(t):
+    if RAID_RE.search(t) and not CALL_RE.search(t) and not CARE_RE.search(t):
         return True
     return False
 
@@ -205,6 +219,12 @@ def is_shill_drop(text: str) -> bool:
     if HANDLE_RE.search(text) and len(text) < 80:
         return True
     return False
+
+
+def wants_clinic(text: str) -> bool:
+    if RAID_HELP_RE.search(text):
+        return False
+    return bool(CALL_RE.search(text) or PLAIN_HELP_RE.search(text) or CARE_RE.search(text))
 
 
 def addressed_to_bot(update: Update, text: str) -> bool:
@@ -285,7 +305,10 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     remember(user_id, "user", text)
     extra = ""
     if care:
-        extra += "\nThis caller sounds hurt. Be human. Warm, specific, short. No tagline."
+        extra += (
+            "\nThis caller asked for help or is hurting. Be a therapist, not a roast. "
+            "Warm, specific, short."
+        )
     if facts[user_id]:
         extra += "\nKnown about this caller:\n- " + "\n- ".join(facts[user_id][-8:])
     if last_replies[user_id]:
@@ -314,11 +337,7 @@ def draft_tweet(topic: str) -> str:
         messages=[
             {
                 "role": "system",
-                "content": (
-                    VOICE
-                    + "\nWrite ONE X post as Dr. Hope Ium. 1-2 sentences. under 260 characters. "
-                    "no hashtag dump. no buy pitch. no thinking."
-                ),
+                "content": VOICE + "\nWrite ONE X post. 1-2 sentences. under 260 characters. no thinking.",
             },
             {"role": "user", "content": prompt},
         ],
@@ -345,10 +364,7 @@ def look_at_image(user_id: int, b64: str, question: str) -> str:
     for model in VISION_MODELS:
         try:
             result = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=220,
+                model=model, messages=messages, temperature=0.7, max_tokens=220
             )
             reply = spoken_only(result.choices[0].message.content or "")
             if reply:
@@ -401,7 +417,7 @@ async def speak(text: str, path: Path):
 START = """hi. i'm Dr. Hope Ium.
 Pumpfun Mental Health Hotline.
 
-in groups i only talk if you @ me, reply to me, or drop a scam link.
+in groups i jump in for @mentions, replies, scam links, and real help.
 
 real crisis: 988
 gambling: 1-800-GAMBLER
@@ -438,21 +454,26 @@ async def tweet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("paste this on x:\n\n" + line)
 
 
-async def send_voice(update: Update, text: str):
+async def send_voice(update: Update, text: str) -> bool:
     path = Path("/tmp") / f"voice_{update.effective_user.id}.mp3"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         await speak(text, path)
         with path.open("rb") as audio:
-            await update.message.reply_voice(voice=audio)
+            await update.message.reply_voice(voice=audio, caption=text[:1024])
+        return True
+    except Exception as e:
+        print("VOICE SEND:", type(e).__name__, e)
+        return False
     finally:
         if path.exists():
             path.unlink()
 
 
 async def roast(update: Update, line: str):
-    await update.message.reply_text(line)
-    await send_voice(update, line)
+    ok = await send_voice(update, line)
+    if not ok:
+        await update.message.reply_text(line)
 
 
 async def handle_text(update: Update, text: str):
@@ -460,6 +481,7 @@ async def handle_text(update: Update, text: str):
     staff = await is_staff(update)
     private = is_private(update)
     addressed = addressed_to_bot(update, text)
+    clinic = wants_clinic(text)
 
     if is_crisis(text):
         await roast(
@@ -472,7 +494,7 @@ async def handle_text(update: Update, text: str):
         await roast(update, pick(user_id, SCAM_TROLL))
         return
 
-    if not private and not addressed:
+    if not private and not addressed and not clinic:
         return
 
     if is_raid_or_ca(text):
@@ -483,13 +505,10 @@ async def handle_text(update: Update, text: str):
     if is_admin_beg(text) and not staff:
         await roast(update, pick(user_id, ADMIN_TROLL))
         return
-    if is_shill_drop(text) and not staff:
-        await roast(update, pick(user_id, SCAM_TROLL))
-        return
     if is_opportunist(text) and not staff:
         await roast(update, pick(user_id, TROLL))
         return
-    care = bool(CARE_RE.search(text))
+    care = clinic or bool(CARE_RE.search(text))
     if HOPIUM_RE.search(text) and not care and not staff:
         await roast(update, pick(user_id, HOPIUM))
         return
@@ -532,15 +551,13 @@ async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def photo_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption or ""
-    if not is_private(update) and not addressed_to_bot(update, caption):
+    if not is_private(update) and not addressed_to_bot(update, caption) and not wants_clinic(caption):
         return
     if not caption and is_private(update):
         return
     try:
         b64 = await photo_to_b64(update)
-        reply = await asyncio.to_thread(
-            look_at_image, update.effective_user.id, b64, caption
-        )
+        reply = await asyncio.to_thread(look_at_image, update.effective_user.id, b64, caption)
     except Exception as e:
         print("VISION ERROR:", type(e).__name__, e)
         reply = "i see a pic but my eyes glitched. describe it in one sentence."
