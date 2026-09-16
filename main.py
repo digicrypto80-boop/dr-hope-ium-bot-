@@ -54,9 +54,10 @@ Official desk:
 - ca: EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump
 If they ask for the site or ca, give it once. do not tell them to buy.
 
-If they ask for help, a therapist, or to talk, sit down with them.
+If they ask for help or to talk: care first.
 If bags are down or rent is gone: care first.
-Staff and group admins may post official links. do not roast them for that.
+Check dm / inbox pitches are scams. roast those.
+Staff and group admins may post official links. do not roast them.
 1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
 """
@@ -68,18 +69,21 @@ CRISIS = [
 OPP = [
     "is the dev active", "dev active", "devs active", "when will the dev",
     "is dev online", "can you shill", "boost this", "make it trend",
-    "can you call this", "promote this",
+    "can you call this", "promote this", "can the dev do something",
+    "can dev do something", "devs do something",
 ]
 
 ADMIN_RE = re.compile(
-    r"\b(mod me|mod me up|make me (a )?mod|make me admin|give me admin|"
-    r"can i be (a )?mod|can i be admin|promote me|i want admin|"
-    r"add me as (admin|mod)|make me moderator)\b",
+    r"\b(mod me|mod me up|can you mod me|make me (a )?mod|make me admin|"
+    r"give me admin|can i be (a )?mod|can i be admin|promote me|"
+    r"i want admin|add me as (admin|mod)|make me moderator)\b",
     re.I,
 )
 HOPIUM_RE = re.compile(
     r"\b(we are so back|so back|to the moon|gonna make it|i made it|"
-    r"can't sell|cant sell|round ?trip|we're rich|we made it)\b",
+    r"can't sell|cant sell|round ?trip|we're rich|we made it|"
+    r"wen moon|wen lambo|is this long.?term|trust the process|"
+    r"this is the bottom|should i ape)\b",
     re.I,
 )
 SERVICE_RE = re.compile(
@@ -92,7 +96,7 @@ CARE_RE = re.compile(
     r"\b(lost (the |my )?rent|spent (the |my )?rent|can't sleep|cant sleep|"
     r"i'm scared|im scared|ashamed|i feel stupid|lonely|i messed up|my family|"
     r"down bad|wiped|no money|i'm broke|im broke|help me|"
-    r"bags? (are )?down|bag is down)\b",
+    r"bags? are down|bag is down|i'?m cooked|we cooked)\b",
     re.I,
 )
 CALL_RE = re.compile(
@@ -101,11 +105,20 @@ CALL_RE = re.compile(
     r"(make|place|need) a call|call the hotline|"
     r"i need help|need help|help me|please help|"
     r"can (i|we) talk|i want to talk|need to talk|talk to someone|"
-    r"need someone|anyone there)\b",
+    r"is there someone i can speak to|need someone|anyone there)\b",
     re.I,
 )
 PLAIN_HELP_RE = re.compile(r"^\s*(please\s+)?help[.!]?\s*$", re.I)
 RAID_HELP_RE = re.compile(r"\bhelp\s+(raid|shill|boost|spam)\b", re.I)
+DEX_RE = re.compile(r"\b(is dex paid|dex paid|dexscreener paid|is the dex paid)\b", re.I)
+RUG_RE = re.compile(r"\b(is this a rug|are we rugged|did (we|i) get rugged)\b", re.I)
+IM_DOWN_RE = re.compile(r"^\s*i'?m down[.!]?\s*$", re.I)
+DM_RE = re.compile(
+    r"\b(check (my |the )?dms?|check inbox|slide (in )?(the )?dms?|"
+    r"i (sent|wrote|messaged) you( a dm)?|dm me|dms open|"
+    r"wrote you privately)\b",
+    re.I,
+)
 LINK_RE = re.compile(
     r"(https?://|www\.|t\.me/|telegram\.me/|dexscreener|birdeye|gmgn\.)",
     re.I,
@@ -123,6 +136,7 @@ RAID_RE = re.compile(
 
 TROLL = [
     "dev active? sit down. lowlife vendor energy.",
+    "can the dev do something. the dev did something. they launched. sit.",
     "that's a sales call. i'm a hotline. take it somewhere else, dummy.",
     "opportunist detected. scum of the earth behavior. no.",
 ]
@@ -130,6 +144,10 @@ SCAM_TROLL = [
     "oh a link. take that scam bag somewhere else, lowlife.",
     "oh look who's here. brave boy got out of my dms. get your bitch ass scams out of here.",
     "if the coin was real you wouldn't need to paste it at a psychiatrist.",
+    "check dm? that's the oldest drain in the book, lowlife.",
+    "inbox merchant. the clinic is public. sit down.",
+    "if it was real you wouldn't need the dms, dummy.",
+    "slide into dms. slide out of my group.",
 ]
 ADMIN_TROLL = [
     "mod you up? sell me this memecoin first, dummy.",
@@ -139,8 +157,19 @@ ADMIN_TROLL = [
 ]
 HOPIUM = [
     "you talking like you made it. reality is you're in denial, thinking a memecoin is a pension.",
-    "most of you will round trip. you can't hit sell because it's going to the moon. honey, it ain't.",
+    "wen moon. honey, it ain't going to the moon. take initials out.",
+    "wen lambo. you can't afford the parking. sell half.",
+    "long term. that's what people say when they missed the exit.",
     "take your profits. stop staring at the charts. go live your life.",
+]
+DEX = [
+    "if you have to ask if dex is paid, treat it as unpaid and stop refreshing.",
+    "dex paid? assume no. paid listings are not a personality.",
+    "unpaid dex and a dream. classic.",
+]
+RUG = [
+    "if you're asking if it's a rug, part of you already knows.",
+    "rug or not, your nervous system already filed the paperwork.",
 ]
 SERVICE_TROLL = [
     "raid team? that's a group chat and a dream, dummy.",
@@ -202,19 +231,21 @@ def is_admin_beg(text: str) -> bool:
 
 def is_raid_or_ca(text: str) -> bool:
     t = text.strip()
-    if SERVICE_RE.search(t):
+    if SERVICE_RE.search(t) or wants_clinic(t):
         return False
     if ONLY_CA_RE.match(t):
         return True
     if CA_RE.search(t) and len(t) < 80:
         return True
-    if RAID_RE.search(t) and not CALL_RE.search(t) and not CARE_RE.search(t):
+    if RAID_RE.search(t):
         return True
     return False
 
 
 def is_shill_drop(text: str) -> bool:
     if LINK_RE.search(text):
+        return True
+    if DM_RE.search(text):
         return True
     if HANDLE_RE.search(text) and len(text) < 80:
         return True
@@ -224,7 +255,24 @@ def is_shill_drop(text: str) -> bool:
 def wants_clinic(text: str) -> bool:
     if RAID_HELP_RE.search(text):
         return False
-    return bool(CALL_RE.search(text) or PLAIN_HELP_RE.search(text) or CARE_RE.search(text))
+    return bool(
+        CALL_RE.search(text)
+        or PLAIN_HELP_RE.search(text)
+        or CARE_RE.search(text)
+        or IM_DOWN_RE.search(text)
+    )
+
+
+def wants_jump(text: str) -> bool:
+    if wants_clinic(text) or is_shill_drop(text):
+        return True
+    return bool(
+        ADMIN_RE.search(text)
+        or HOPIUM_RE.search(text)
+        or DEX_RE.search(text)
+        or RUG_RE.search(text)
+        or is_opportunist(text)
+    )
 
 
 def addressed_to_bot(update: Update, text: str) -> bool:
@@ -305,10 +353,7 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     remember(user_id, "user", text)
     extra = ""
     if care:
-        extra += (
-            "\nThis caller asked for help or is hurting. Be a therapist, not a roast. "
-            "Warm, specific, short."
-        )
+        extra += "\nThis caller asked for help or is hurting. Be a therapist, not a roast. Warm, specific, short."
     if facts[user_id]:
         extra += "\nKnown about this caller:\n- " + "\n- ".join(facts[user_id][-8:])
     if last_replies[user_id]:
@@ -482,6 +527,7 @@ async def handle_text(update: Update, text: str):
     private = is_private(update)
     addressed = addressed_to_bot(update, text)
     clinic = wants_clinic(text)
+    jump = wants_jump(text)
 
     if is_crisis(text):
         await roast(
@@ -494,7 +540,7 @@ async def handle_text(update: Update, text: str):
         await roast(update, pick(user_id, SCAM_TROLL))
         return
 
-    if not private and not addressed and not clinic:
+    if not private and not addressed and not jump:
         return
 
     if is_raid_or_ca(text):
@@ -505,10 +551,16 @@ async def handle_text(update: Update, text: str):
     if is_admin_beg(text) and not staff:
         await roast(update, pick(user_id, ADMIN_TROLL))
         return
+    if DEX_RE.search(text):
+        await roast(update, pick(user_id, DEX))
+        return
+    if RUG_RE.search(text):
+        await roast(update, pick(user_id, RUG))
+        return
     if is_opportunist(text) and not staff:
         await roast(update, pick(user_id, TROLL))
         return
-    care = clinic or bool(CARE_RE.search(text))
+    care = clinic
     if HOPIUM_RE.search(text) and not care and not staff:
         await roast(update, pick(user_id, HOPIUM))
         return
@@ -525,7 +577,8 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_private(update) and not addressed_to_bot(update, update.message.caption or ""):
+    cap = update.message.caption or ""
+    if not is_private(update) and not addressed_to_bot(update, cap):
         return
     msg = update.message
     try:
@@ -551,7 +604,7 @@ async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def photo_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption or ""
-    if not is_private(update) and not addressed_to_bot(update, caption) and not wants_clinic(caption):
+    if not is_private(update) and not addressed_to_bot(update, caption) and not wants_jump(caption):
         return
     if not caption and is_private(update):
         return
