@@ -37,6 +37,8 @@ OWNERS = {
 }
 FREE_CHATS = set()
 MUTE_THREADS = {6639}
+HOTLINE_CA = "EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump"
+HOTLINE_SITE = "pumpfunmentalhealthhotline.com"
 
 client = OpenAI(
     api_key=os.environ.get("GROQ_API_KEY", ""),
@@ -77,18 +79,17 @@ Official:
 Rules:
 - output ONLY the tweet. no preface. no quotes. no thinking.
 - 2 short sentences max, then one closer.
-- under 270 characters.
+- keep room for the full contract. never truncate a contract address.
 - include EXACTLY one desk line, not both:
   A) pumpfunmentalhealthhotline.com
   OR
-  B) @PFMentalHealth then a space then the ca. never write a + between them.
+  B) @PFMentalHealth then a space then the FULL ca. never write a + between them.
 - rotate closers. examples:
   call us today for your dose of cope.
   clinic's open. cope is complimentary.
   your call matters. your entry doesn't.
   hang up after. touch grass.
 - no buy pitch. no "ape this". not financial advice.
-- funny trench psychiatrist, not a shill account.
 """
 
 CRISIS = [
@@ -419,6 +420,26 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     return reply[:500]
 
 
+def finish_tweet(line: str) -> str:
+    line = (line or "").strip().strip('"')
+    if line.lower().startswith("paste this"):
+        line = line.split("\n", 1)[-1].strip()
+    line = line.replace("@PFMentalHealth +", "@PFMentalHealth ")
+    line = line.replace("@PFMentalHealth+", "@PFMentalHealth ")
+    if "EhhGRV" in line and HOTLINE_CA not in line:
+        line = re.sub(r"EhhGRV[A-Za-z0-9]+", HOTLINE_CA, line)
+    if "@PFMentalHealth" in line and HOTLINE_CA not in line:
+        line = line.rstrip() + " " + HOTLINE_CA
+    if HOTLINE_CA in line and len(line) > 280:
+        line = line.replace("@PFMentalHealth", "").replace(HOTLINE_CA, "")
+        line = re.sub(r"\s+", " ", line).strip()
+        if HOTLINE_SITE not in line:
+            line = (line[:220].rstrip() + " " + HOTLINE_SITE).strip()
+    if HOTLINE_SITE not in line and HOTLINE_CA not in line:
+        line = (line[:230].rstrip() + " " + HOTLINE_SITE).strip()
+    return line[:280]
+
+
 def draft_tweet(topic: str) -> str:
     prompt = topic.strip() or "write a standalone hotline post for bagholders."
     result = client.chat.completions.create(
@@ -428,16 +449,12 @@ def draft_tweet(topic: str) -> str:
             {"role": "user", "content": prompt},
         ],
         temperature=1.1,
-        max_tokens=220,
+        max_tokens=280,
         extra_body={"reasoning_effort": "low"},
     )
     line = spoken_only(result.choices[0].message.content or "")
-    line = line.strip().strip('"')
-    if line.lower().startswith("paste this"):
-        line = line.split("\n", 1)[-1].strip()
-    line = line.replace("@PFMentalHealth +", "@PFMentalHealth ")
-    line = line.replace("@PFMentalHealth+", "@PFMentalHealth ")
-    return line[:270] or "clinic's open. call us today for your dose of cope. pumpfunmentalhealthhotline.com"
+    line = finish_tweet(line)
+    return line or f"clinic's open. call us today for your dose of cope. {HOTLINE_SITE}"
 
 
 def look_at_image(user_id: int, b64: str, question: str) -> str:
@@ -552,7 +569,7 @@ async def tweet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         line = await asyncio.to_thread(draft_tweet, topic)
     except Exception as e:
         print("TWEET DRAFT ERROR:", type(e).__name__, e)
-        line = "clinic's open. call us today for your dose of cope. pumpfunmentalhealthhotline.com"
+        line = f"clinic's open. call us today for your dose of cope. {HOTLINE_SITE}"
     await update.message.reply_text(line)
 
 
