@@ -35,6 +35,7 @@ OWNERS = {
     for x in os.environ.get("OWNER_IDS", "").replace(" ", "").split(",")
     if x.isdigit()
 }
+FREE_CHATS = set()
 
 client = OpenAI(
     api_key=os.environ.get("GROQ_API_KEY", ""),
@@ -60,6 +61,33 @@ Check dm / inbox pitches are scams. roast those.
 Staff and group admins may post official links. do not roast them.
 1-3 sentences. no lists. no markdown.
 Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
+"""
+
+TWEET_VOICE = """
+You write X posts as Dr. Hope Ium for the Pumpfun Mental Health Hotline.
+Dry, funny, feminine, a little mean. spoken. lowercase ok.
+
+Official:
+- site: pumpfunmentalhealthhotline.com
+- x: @PFMentalHealth
+- ca: EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump
+- ticker: $HOTLINE
+
+Rules:
+- output ONLY the tweet. no preface. no quotes. no thinking.
+- 2 short sentences max, then one closer.
+- under 270 characters.
+- include EXACTLY one desk line, not both:
+  A) pumpfunmentalhealthhotline.com
+  OR
+  B) @PFMentalHealth plus the ca
+- rotate closers. examples:
+  call us today for your dose of cope.
+  clinic's open. cope is complimentary.
+  your call matters. your entry doesn't.
+  hang up after. touch grass.
+- no buy pitch. no "ape this". not financial advice.
+- funny trench psychiatrist, not a shill account.
 """
 
 CRISIS = [
@@ -214,6 +242,13 @@ def pick(user_id: int, pool):
 def is_private(update: Update) -> bool:
     chat = update.effective_chat
     return bool(chat and chat.type == "private")
+
+
+def is_free_chat(update: Update) -> bool:
+    chat = update.effective_chat
+    if not chat:
+        return False
+    return (chat.username or "").lower() in FREE_CHATS
 
 
 def is_crisis(text: str) -> bool:
@@ -380,17 +415,18 @@ def draft_tweet(topic: str) -> str:
     result = client.chat.completions.create(
         model="openai/gpt-oss-20b",
         messages=[
-            {
-                "role": "system",
-                "content": VOICE + "\nWrite ONE X post. 1-2 sentences. under 260 characters. no thinking.",
-            },
+            {"role": "system", "content": TWEET_VOICE},
             {"role": "user", "content": prompt},
         ],
-        temperature=1.0,
-        max_tokens=200,
+        temperature=1.1,
+        max_tokens=220,
         extra_body={"reasoning_effort": "low"},
     )
-    return spoken_only(result.choices[0].message.content or "")[:260] or "your call matters. your entry doesn't."
+    line = spoken_only(result.choices[0].message.content or "")
+    line = line.strip().strip('"')
+    if line.lower().startswith("paste this"):
+        line = line.split("\n", 1)[-1].strip()
+    return line[:270] or "clinic's open. call us today for your dose of cope. pumpfunmentalhealthhotline.com"
 
 
 def look_at_image(user_id: int, b64: str, question: str) -> str:
@@ -462,7 +498,7 @@ async def speak(text: str, path: Path):
 START = """hi. i'm Dr. Hope Ium.
 Pumpfun Mental Health Hotline.
 
-in groups i jump in for @mentions, replies, scam links, and real help.
+/tweet drafts a copy-ready x post.
 
 real crisis: 988
 gambling: 1-800-GAMBLER
@@ -495,8 +531,8 @@ async def tweet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         line = await asyncio.to_thread(draft_tweet, topic)
     except Exception as e:
         print("TWEET DRAFT ERROR:", type(e).__name__, e)
-        line = "your call matters. your entry doesn't."
-    await update.message.reply_text("paste this on x:\n\n" + line)
+        line = "clinic's open. call us today for your dose of cope. pumpfunmentalhealthhotline.com"
+    await update.message.reply_text(line)
 
 
 async def send_voice(update: Update, text: str) -> bool:
@@ -525,6 +561,7 @@ async def handle_text(update: Update, text: str):
     user_id = update.effective_user.id
     staff = await is_staff(update)
     private = is_private(update)
+    free = is_free_chat(update)
     addressed = addressed_to_bot(update, text)
     clinic = wants_clinic(text)
     jump = wants_jump(text)
@@ -540,7 +577,7 @@ async def handle_text(update: Update, text: str):
         await roast(update, pick(user_id, SCAM_TROLL))
         return
 
-    if not private and not addressed and not jump:
+    if not private and not free and not addressed and not jump:
         return
 
     if is_raid_or_ca(text):
@@ -578,7 +615,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cap = update.message.caption or ""
-    if not is_private(update) and not addressed_to_bot(update, cap):
+    if not is_private(update) and not is_free_chat(update) and not addressed_to_bot(update, cap):
         return
     msg = update.message
     try:
@@ -604,7 +641,12 @@ async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def photo_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption or ""
-    if not is_private(update) and not addressed_to_bot(update, caption) and not wants_jump(caption):
+    if (
+        not is_private(update)
+        and not is_free_chat(update)
+        and not addressed_to_bot(update, caption)
+        and not wants_jump(caption)
+    ):
         return
     if not caption and is_private(update):
         return
