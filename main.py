@@ -4,6 +4,8 @@ import base64
 import random
 import asyncio
 import threading
+import urllib.request
+from urllib.parse import quote
 from collections import defaultdict
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -57,39 +59,23 @@ Official desk:
 - token ticker: $HOTLINE
 - ca: EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump
 If they ask for the site or ca, give it once. do not tell them to buy.
-
-If they ask for help or to talk: care first.
-If bags are down or rent is gone: care first.
-Check dm / inbox pitches are scams. roast those.
-Staff and group admins may post official links. do not roast them.
-1-3 sentences. no lists. no markdown.
-Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
+1-3 sentences. Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
 """
 
 TWEET_VOICE = """
-You write X posts as Dr. Hope Ium for the Pumpfun Mental Health Hotline.
-Dry, funny, feminine, a little mean. spoken. lowercase ok.
+You write X posts as Dr. Hope Ium. output ONLY the tweet.
+include EXACTLY one desk line: pumpfunmentalhealthhotline.com
+OR @PFMentalHealth then a space then the FULL ca EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump. no + sign.
+rotate closers like: call us today for your dose of cope.
+no buy pitch.
+"""
 
-Official:
-- site: pumpfunmentalhealthhotline.com
-- x: @PFMentalHealth
-- ca: EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump
-- ticker: $HOTLINE
-
-Rules:
-- output ONLY the tweet. no preface. no quotes. no thinking.
-- 2 short sentences max, then one closer.
-- keep room for the full contract. never truncate a contract address.
-- include EXACTLY one desk line, not both:
-  A) pumpfunmentalhealthhotline.com
-  OR
-  B) @PFMentalHealth then a space then the FULL ca. never write a + between them.
-- rotate closers. examples:
-  call us today for your dose of cope.
-  clinic's open. cope is complimentary.
-  your call matters. your entry doesn't.
-  hang up after. touch grass.
-- no buy pitch. no "ape this". not financial advice.
+MEME_VOICE = """
+Write ONE image-generation prompt for a funny Pumpfun Mental Health Hotline meme.
+Visual, sharp, meme still. Adult feminine trench psychiatrist energy ok. green/white pill motif ok.
+Do not write tiny unreadable paragraph text on the image. One short caption max if any.
+No minors. No gore. No buy-button ads.
+Return only the prompt.
 """
 
 CRISIS = [
@@ -168,43 +154,31 @@ TROLL = [
     "dev active? sit down. lowlife vendor energy.",
     "can the dev do something. the dev did something. they launched. sit.",
     "that's a sales call. i'm a hotline. take it somewhere else, dummy.",
-    "opportunist detected. scum of the earth behavior. no.",
 ]
 SCAM_TROLL = [
     "oh a link. take that scam bag somewhere else, lowlife.",
-    "oh look who's here. brave boy got out of my dms. get your bitch ass scams out of here.",
-    "if the coin was real you wouldn't need to paste it at a psychiatrist.",
     "check dm? that's the oldest drain in the book, lowlife.",
     "inbox merchant. the clinic is public. sit down.",
-    "if it was real you wouldn't need the dms, dummy.",
     "slide into dms. slide out of my group.",
 ]
 ADMIN_TROLL = [
     "mod you up? sell me this memecoin first, dummy.",
-    "what makes you so special. besides the begging.",
-    "where did you come from, superman. sit down.",
     "admin? cry me a river. this is a clinic, not a clubhouse.",
 ]
 HOPIUM = [
-    "you talking like you made it. reality is you're in denial, thinking a memecoin is a pension.",
     "wen moon. honey, it ain't going to the moon. take initials out.",
     "wen lambo. you can't afford the parking. sell half.",
-    "long term. that's what people say when they missed the exit.",
     "take your profits. stop staring at the charts. go live your life.",
 ]
 DEX = [
     "if you have to ask if dex is paid, treat it as unpaid and stop refreshing.",
     "dex paid? assume no. paid listings are not a personality.",
-    "unpaid dex and a dream. classic.",
 ]
 RUG = [
     "if you're asking if it's a rug, part of you already knows.",
-    "rug or not, your nervous system already filed the paperwork.",
 ]
 SERVICE_TROLL = [
     "raid team? that's a group chat and a dream, dummy.",
-    "you don't have a raid team. you have five mute accounts and a caffeine problem.",
-    "if your service worked you wouldn't be pitching a psychiatrist.",
 ]
 
 memory = defaultdict(list)
@@ -288,9 +262,7 @@ def is_raid_or_ca(text: str) -> bool:
 
 
 def is_shill_drop(text: str) -> bool:
-    if LINK_RE.search(text):
-        return True
-    if DM_RE.search(text):
+    if LINK_RE.search(text) or DM_RE.search(text):
         return True
     if HANDLE_RE.search(text) and len(text) < 80:
         return True
@@ -381,7 +353,7 @@ def spoken_only(raw: str) -> str:
             messages=[
                 {
                     "role": "system",
-                    "content": "Rewrite as Dr. Hope Ium. 1-3 lowercase spoken sentences. no thinking. no xml.",
+                    "content": "Rewrite as Dr. Hope Ium. 1-3 lowercase spoken sentences. no thinking.",
                 },
                 {"role": "user", "content": t[:800]},
             ],
@@ -398,11 +370,11 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     remember(user_id, "user", text)
     extra = ""
     if care:
-        extra += "\nThis caller asked for help or is hurting. Be a therapist, not a roast. Warm, specific, short."
+        extra += "\nThis caller asked for help or is hurting. Be a therapist, not a roast."
     if facts[user_id]:
         extra += "\nKnown about this caller:\n- " + "\n- ".join(facts[user_id][-8:])
     if last_replies[user_id]:
-        extra += "\nYou already said these. Do not reuse them:\n- " + "\n- ".join(last_replies[user_id][-6:])
+        extra += "\nDo not reuse:\n- " + "\n- ".join(last_replies[user_id][-6:])
     messages = [{"role": "system", "content": VOICE + extra}] + memory[user_id]
     result = client.chat.completions.create(
         model="openai/gpt-oss-20b",
@@ -411,8 +383,7 @@ def think(user_id: int, text: str, care: bool = False) -> str:
         max_tokens=800,
         extra_body={"reasoning_effort": "low"},
     )
-    msg = result.choices[0].message
-    raw = msg.content or getattr(msg, "reasoning", None) or ""
+    raw = result.choices[0].message.content or ""
     reply = spoken_only(raw) or "i'm here. say the part that actually hurts."
     last_replies[user_id].append(reply)
     last_replies[user_id] = last_replies[user_id][-8:]
@@ -452,15 +423,41 @@ def draft_tweet(topic: str) -> str:
         max_tokens=280,
         extra_body={"reasoning_effort": "low"},
     )
-    line = spoken_only(result.choices[0].message.content or "")
-    line = finish_tweet(line)
-    return line or f"clinic's open. call us today for your dose of cope. {HOTLINE_SITE}"
+    return finish_tweet(spoken_only(result.choices[0].message.content or "")) or (
+        f"clinic's open. call us today for your dose of cope. {HOTLINE_SITE}"
+    )
+
+
+def meme_prompt(desc: str) -> str:
+    result = client.chat.completions.create(
+        model="openai/gpt-oss-20b",
+        messages=[
+            {"role": "system", "content": MEME_VOICE},
+            {"role": "user", "content": desc.strip() or "bagholder on a therapy call"},
+        ],
+        temperature=0.9,
+        max_tokens=180,
+        extra_body={"reasoning_effort": "low"},
+    )
+    prompt = spoken_only(result.choices[0].message.content or desc)
+    return prompt[:400] or desc
+
+
+def fetch_meme(prompt: str, path: Path):
+    url = (
+        "https://image.pollinations.ai/prompt/"
+        + quote(prompt)
+        + "?width=768&height=768&nologo=true"
+    )
+    req = urllib.request.Request(url, headers={"User-Agent": "DrHopeIumBot/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        path.write_bytes(resp.read())
 
 
 def look_at_image(user_id: int, b64: str, question: str) -> str:
     prompt = (question or "look at this photo") + "\nReply only as Dr. Hope Ium. 1-3 spoken sentences."
     messages = [
-        {"role": "system", "content": VOICE + "\nNever output thinking. Final spoken answer only."},
+        {"role": "system", "content": VOICE + "\nNever output thinking."},
         {
             "role": "user",
             "content": [
@@ -477,7 +474,6 @@ def look_at_image(user_id: int, b64: str, question: str) -> str:
             )
             reply = spoken_only(result.choices[0].message.content or "")
             if reply:
-                last_replies[user_id].append(reply)
                 print("VISION OK:", model)
                 return reply[:500]
         except Exception as e:
@@ -526,7 +522,8 @@ async def speak(text: str, path: Path):
 START = """hi. i'm Dr. Hope Ium.
 Pumpfun Mental Health Hotline.
 
-/tweet drafts a copy-ready x post.
+/tweet drafts an x line.
+/meme plus a description makes a pic.
 
 real crisis: 988
 gambling: 1-800-GAMBLER
@@ -573,6 +570,29 @@ async def tweet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(line)
 
 
+async def meme(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_muted_topic(update):
+        return
+    desc = " ".join(context.args) if context.args else ""
+    if update.message.reply_to_message and update.message.reply_to_message.text:
+        desc = (desc + " " + update.message.reply_to_message.text).strip()
+    if not desc:
+        await update.message.reply_text("give me a description. /meme bags down")
+        return
+    path = Path("/tmp") / f"meme_{update.effective_user.id}.jpg"
+    try:
+        prompt = await asyncio.to_thread(meme_prompt, desc)
+        await asyncio.to_thread(fetch_meme, prompt, path)
+        with path.open("rb") as img:
+            await update.message.reply_photo(photo=img)
+    except Exception as e:
+        print("MEME ERROR:", type(e).__name__, e)
+        await update.message.reply_text("the copier jammed. try /meme again with a shorter description.")
+    finally:
+        if path.exists():
+            path.unlink()
+
+
 async def send_voice(update: Update, text: str) -> bool:
     path = Path("/tmp") / f"voice_{update.effective_user.id}.mp3"
     try:
@@ -614,14 +634,11 @@ async def handle_text(update: Update, text: str):
             "stop. this isn't the bit. call or text 988 now. money can be rebuilt. a life cannot.",
         )
         return
-
     if not private and is_shill_drop(text) and not staff:
         await roast(update, pick(user_id, SCAM_TROLL))
         return
-
     if not private and not free and not addressed and not jump:
         return
-
     if is_raid_or_ca(text):
         return
     if SERVICE_RE.search(text) and not staff:
@@ -711,6 +728,7 @@ async def run():
     app.add_handler(CommandHandler("privacy", privacy))
     app.add_handler(CommandHandler("988", nine_eight_eight))
     app.add_handler(CommandHandler("tweet", tweet))
+    app.add_handler(CommandHandler("meme", meme))
     app.add_handler(CommandHandler("id", my_id))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.VOICE, voice_chat))
