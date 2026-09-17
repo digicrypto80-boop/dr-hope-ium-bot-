@@ -36,6 +36,7 @@ OWNERS = {
     if x.isdigit()
 }
 FREE_CHATS = set()
+MUTE_THREADS = {6639}
 
 client = OpenAI(
     api_key=os.environ.get("GROQ_API_KEY", ""),
@@ -80,7 +81,7 @@ Rules:
 - include EXACTLY one desk line, not both:
   A) pumpfunmentalhealthhotline.com
   OR
-  B) @PFMentalHealth plus the ca
+  B) @PFMentalHealth then a space then the ca. never write a + between them.
 - rotate closers. examples:
   call us today for your dose of cope.
   clinic's open. cope is complimentary.
@@ -249,6 +250,14 @@ def is_free_chat(update: Update) -> bool:
     if not chat:
         return False
     return (chat.username or "").lower() in FREE_CHATS
+
+
+def is_muted_topic(update: Update) -> bool:
+    msg = update.message
+    if not msg:
+        return False
+    tid = getattr(msg, "message_thread_id", None)
+    return tid in MUTE_THREADS
 
 
 def is_crisis(text: str) -> bool:
@@ -426,6 +435,8 @@ def draft_tweet(topic: str) -> str:
     line = line.strip().strip('"')
     if line.lower().startswith("paste this"):
         line = line.split("\n", 1)[-1].strip()
+    line = line.replace("@PFMentalHealth +", "@PFMentalHealth ")
+    line = line.replace("@PFMentalHealth+", "@PFMentalHealth ")
     return line[:270] or "clinic's open. call us today for your dose of cope. pumpfunmentalhealthhotline.com"
 
 
@@ -506,24 +517,34 @@ gambling: 1-800-GAMBLER
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_muted_topic(update):
+        return
     await update.message.reply_text(START)
 
 
 async def privacy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_muted_topic(update):
+        return
     await update.message.reply_text(f"privacy policy:\n{PRIVACY_URL}")
 
 
 async def nine_eight_eight(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_muted_topic(update):
+        return
     await update.message.reply_text(
         "this part isn't a joke.\n\ncall or text 988.\ngambling: 1-800-GAMBLER."
     )
 
 
 async def my_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_muted_topic(update):
+        return
     await update.message.reply_text(f"your telegram id:\n{update.effective_user.id}")
 
 
 async def tweet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_muted_topic(update):
+        return
     topic = " ".join(context.args) if context.args else ""
     if update.message.reply_to_message and update.message.reply_to_message.text:
         topic = (topic + " " + update.message.reply_to_message.text).strip()
@@ -552,12 +573,16 @@ async def send_voice(update: Update, text: str) -> bool:
 
 
 async def roast(update: Update, line: str):
+    if is_muted_topic(update):
+        return
     ok = await send_voice(update, line)
     if not ok:
         await update.message.reply_text(line)
 
 
 async def handle_text(update: Update, text: str):
+    if is_muted_topic(update):
+        return
     user_id = update.effective_user.id
     staff = await is_staff(update)
     private = is_private(update)
@@ -614,6 +639,8 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_muted_topic(update):
+        return
     cap = update.message.caption or ""
     if not is_private(update) and not is_free_chat(update) and not addressed_to_bot(update, cap):
         return
@@ -640,6 +667,8 @@ async def voice_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def photo_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_muted_topic(update):
+        return
     caption = update.message.caption or ""
     if (
         not is_private(update)
