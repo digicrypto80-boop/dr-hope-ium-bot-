@@ -51,15 +51,10 @@ VOICE = """
 You are Dr. Hope Ium.
 Feminine anime-coded trench psychiatrist. Dry, intimate, a little mean.
 Hot tired onee-san on night shift. lowercase ok. short. spoken out loud.
-
 You work for the Pumpfun Mental Health Hotline.
-Official desk:
-- site: https://pumpfunmentalhealthhotline.com
-- x: @PFMentalHealth
-- token ticker: $HOTLINE
-- ca: EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump
-If they ask for the site or ca, give it once. do not tell them to buy.
-1-3 sentences. Parody only. Real crisis: 988. Gambling: 1-800-GAMBLER.
+Official desk: pumpfunmentalhealthhotline.com / @PFMentalHealth / $HOTLINE
+ca: EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump
+do not tell anyone to buy. 1-3 sentences. Real crisis: 988.
 """
 
 TWEET_VOICE = """
@@ -71,11 +66,16 @@ no buy pitch.
 """
 
 MEME_VOICE = """
-Write ONE image-generation prompt for a funny Pumpfun Mental Health Hotline meme.
-Visual, sharp, meme still. Adult feminine trench psychiatrist energy ok. green/white pill motif ok.
-Do not write tiny unreadable paragraph text on the image. One short caption max if any.
-No minors. No gore. No buy-button ads.
-Return only the prompt.
+Write ONE image prompt in the Pumpfun Mental Health Hotline house style from @PFMentalHealth.
+That style is:
+- mint / kelly green flat background
+- a phone shaped like a green-and-white capsule pill
+- simple flat vector cartoon or a classic reaction-meme layout
+- thick white Impact-style caption bars, 3-8 words
+- trench cope joke matching the user's description
+- ugly-funny, screenshot energy, logo energy
+NOT a photoreal woman, NOT a cinematic doctor portrait, NOT fashion lighting.
+No minors. No gore. Return only the prompt.
 """
 
 CRISIS = [
@@ -153,12 +153,10 @@ RAID_RE = re.compile(
 TROLL = [
     "dev active? sit down. lowlife vendor energy.",
     "can the dev do something. the dev did something. they launched. sit.",
-    "that's a sales call. i'm a hotline. take it somewhere else, dummy.",
 ]
 SCAM_TROLL = [
     "oh a link. take that scam bag somewhere else, lowlife.",
     "check dm? that's the oldest drain in the book, lowlife.",
-    "inbox merchant. the clinic is public. sit down.",
     "slide into dms. slide out of my group.",
 ]
 ADMIN_TROLL = [
@@ -167,19 +165,11 @@ ADMIN_TROLL = [
 ]
 HOPIUM = [
     "wen moon. honey, it ain't going to the moon. take initials out.",
-    "wen lambo. you can't afford the parking. sell half.",
     "take your profits. stop staring at the charts. go live your life.",
 ]
-DEX = [
-    "if you have to ask if dex is paid, treat it as unpaid and stop refreshing.",
-    "dex paid? assume no. paid listings are not a personality.",
-]
-RUG = [
-    "if you're asking if it's a rug, part of you already knows.",
-]
-SERVICE_TROLL = [
-    "raid team? that's a group chat and a dream, dummy.",
-]
+DEX = ["if you have to ask if dex is paid, treat it as unpaid and stop refreshing."]
+RUG = ["if you're asking if it's a rug, part of you already knows."]
+SERVICE_TROLL = ["raid team? that's a group chat and a dream, dummy."]
 
 memory = defaultdict(list)
 facts = defaultdict(list)
@@ -231,8 +221,7 @@ def is_muted_topic(update: Update) -> bool:
     msg = update.message
     if not msg:
         return False
-    tid = getattr(msg, "message_thread_id", None)
-    return tid in MUTE_THREADS
+    return getattr(msg, "message_thread_id", None) in MUTE_THREADS
 
 
 def is_crisis(text: str) -> bool:
@@ -240,33 +229,11 @@ def is_crisis(text: str) -> bool:
 
 
 def is_opportunist(text: str) -> bool:
-    t = text.lower()
-    return any(word in t for word in OPP)
+    return any(word in text.lower() for word in OPP)
 
 
 def is_admin_beg(text: str) -> bool:
     return bool(ADMIN_RE.search(text))
-
-
-def is_raid_or_ca(text: str) -> bool:
-    t = text.strip()
-    if SERVICE_RE.search(t) or wants_clinic(t):
-        return False
-    if ONLY_CA_RE.match(t):
-        return True
-    if CA_RE.search(t) and len(t) < 80:
-        return True
-    if RAID_RE.search(t):
-        return True
-    return False
-
-
-def is_shill_drop(text: str) -> bool:
-    if LINK_RE.search(text) or DM_RE.search(text):
-        return True
-    if HANDLE_RE.search(text) and len(text) < 80:
-        return True
-    return False
 
 
 def wants_clinic(text: str) -> bool:
@@ -278,6 +245,21 @@ def wants_clinic(text: str) -> bool:
         or CARE_RE.search(text)
         or IM_DOWN_RE.search(text)
     )
+
+
+def is_raid_or_ca(text: str) -> bool:
+    t = text.strip()
+    if SERVICE_RE.search(t) or wants_clinic(t):
+        return False
+    if ONLY_CA_RE.match(t) or (CA_RE.search(t) and len(t) < 80):
+        return True
+    return bool(RAID_RE.search(t))
+
+
+def is_shill_drop(text: str) -> bool:
+    if LINK_RE.search(text) or DM_RE.search(text):
+        return True
+    return bool(HANDLE_RE.search(text) and len(text) < 80)
 
 
 def wants_jump(text: str) -> bool:
@@ -337,8 +319,7 @@ def _clean(text: str) -> str:
     t = str(text or "")
     if "</think>" in t:
         t = t.split("</think>", 1)[-1]
-    t = t.replace("<think>", "").strip()
-    return t
+    return t.replace("<think>", "").strip()
 
 
 def spoken_only(raw: str) -> str:
@@ -351,10 +332,7 @@ def spoken_only(raw: str) -> str:
         result = client.chat.completions.create(
             model="openai/gpt-oss-20b",
             messages=[
-                {
-                    "role": "system",
-                    "content": "Rewrite as Dr. Hope Ium. 1-3 lowercase spoken sentences. no thinking.",
-                },
+                {"role": "system", "content": "Rewrite as Dr. Hope Ium. 1-3 spoken sentences. no thinking."},
                 {"role": "user", "content": t[:800]},
             ],
             temperature=0.7,
@@ -370,21 +348,19 @@ def think(user_id: int, text: str, care: bool = False) -> str:
     remember(user_id, "user", text)
     extra = ""
     if care:
-        extra += "\nThis caller asked for help or is hurting. Be a therapist, not a roast."
+        extra += "\nThis caller asked for help. Be a therapist, not a roast."
     if facts[user_id]:
-        extra += "\nKnown about this caller:\n- " + "\n- ".join(facts[user_id][-8:])
+        extra += "\nKnown:\n- " + "\n- ".join(facts[user_id][-8:])
     if last_replies[user_id]:
         extra += "\nDo not reuse:\n- " + "\n- ".join(last_replies[user_id][-6:])
-    messages = [{"role": "system", "content": VOICE + extra}] + memory[user_id]
     result = client.chat.completions.create(
         model="openai/gpt-oss-20b",
-        messages=messages,
+        messages=[{"role": "system", "content": VOICE + extra}] + memory[user_id],
         temperature=1.05,
         max_tokens=800,
         extra_body={"reasoning_effort": "low"},
     )
-    raw = result.choices[0].message.content or ""
-    reply = spoken_only(raw) or "i'm here. say the part that actually hurts."
+    reply = spoken_only(result.choices[0].message.content or "") or "i'm here. say the part that actually hurts."
     last_replies[user_id].append(reply)
     last_replies[user_id] = last_replies[user_id][-8:]
     remember(user_id, "assistant", reply)
@@ -395,15 +371,13 @@ def finish_tweet(line: str) -> str:
     line = (line or "").strip().strip('"')
     if line.lower().startswith("paste this"):
         line = line.split("\n", 1)[-1].strip()
-    line = line.replace("@PFMentalHealth +", "@PFMentalHealth ")
-    line = line.replace("@PFMentalHealth+", "@PFMentalHealth ")
+    line = line.replace("@PFMentalHealth +", "@PFMentalHealth ").replace("@PFMentalHealth+", "@PFMentalHealth ")
     if "EhhGRV" in line and HOTLINE_CA not in line:
         line = re.sub(r"EhhGRV[A-Za-z0-9]+", HOTLINE_CA, line)
     if "@PFMentalHealth" in line and HOTLINE_CA not in line:
         line = line.rstrip() + " " + HOTLINE_CA
     if HOTLINE_CA in line and len(line) > 280:
-        line = line.replace("@PFMentalHealth", "").replace(HOTLINE_CA, "")
-        line = re.sub(r"\s+", " ", line).strip()
+        line = re.sub(r"\s+", " ", line.replace("@PFMentalHealth", "").replace(HOTLINE_CA, "")).strip()
         if HOTLINE_SITE not in line:
             line = (line[:220].rstrip() + " " + HOTLINE_SITE).strip()
     if HOTLINE_SITE not in line and HOTLINE_CA not in line:
@@ -412,12 +386,11 @@ def finish_tweet(line: str) -> str:
 
 
 def draft_tweet(topic: str) -> str:
-    prompt = topic.strip() or "write a standalone hotline post for bagholders."
     result = client.chat.completions.create(
         model="openai/gpt-oss-20b",
         messages=[
             {"role": "system", "content": TWEET_VOICE},
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": topic.strip() or "write a standalone hotline post"},
         ],
         temperature=1.1,
         max_tokens=280,
@@ -433,35 +406,39 @@ def meme_prompt(desc: str) -> str:
         model="openai/gpt-oss-20b",
         messages=[
             {"role": "system", "content": MEME_VOICE},
-            {"role": "user", "content": desc.strip() or "bagholder on a therapy call"},
+            {"role": "user", "content": desc.strip() or "bags down"},
         ],
-        temperature=0.9,
+        temperature=0.7,
         max_tokens=180,
         extra_body={"reasoning_effort": "low"},
     )
     prompt = spoken_only(result.choices[0].message.content or desc)
-    return prompt[:400] or desc
+    extra = (
+        ", mint green flat background, smartphone shaped like a green and white capsule pill, "
+        "simple flat vector cartoon, bold white impact caption bars, reaction meme layout, "
+        "not photoreal, not a woman portrait, Pumpfun Mental Health Hotline style"
+    )
+    return (prompt + extra)[:450]
 
 
 def fetch_meme(prompt: str, path: Path):
     url = (
         "https://image.pollinations.ai/prompt/"
         + quote(prompt)
-        + "?width=768&height=768&nologo=true"
+        + "?width=768&height=768&nologo=true&model=flux&enhance=true"
     )
     req = urllib.request.Request(url, headers={"User-Agent": "DrHopeIumBot/1.0"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with urllib.request.urlopen(req, timeout=90) as resp:
         path.write_bytes(resp.read())
 
 
 def look_at_image(user_id: int, b64: str, question: str) -> str:
-    prompt = (question or "look at this photo") + "\nReply only as Dr. Hope Ium. 1-3 spoken sentences."
     messages = [
         {"role": "system", "content": VOICE + "\nNever output thinking."},
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": prompt},
+                {"type": "text", "text": (question or "look at this photo") + "\n1-3 spoken sentences."},
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
             ],
         },
@@ -484,10 +461,7 @@ def look_at_image(user_id: int, b64: str, question: str) -> str:
 
 def transcribe_file(path: Path) -> str:
     with path.open("rb") as audio:
-        result = client.audio.transcriptions.create(
-            model="whisper-large-v3-turbo",
-            file=audio,
-        )
+        result = client.audio.transcriptions.create(model="whisper-large-v3-turbo", file=audio)
     return (result.text or "").strip()
 
 
@@ -526,7 +500,6 @@ Pumpfun Mental Health Hotline.
 /meme plus a description makes a pic.
 
 real crisis: 988
-gambling: 1-800-GAMBLER
 """
 
 
@@ -545,9 +518,7 @@ async def privacy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def nine_eight_eight(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_muted_topic(update):
         return
-    await update.message.reply_text(
-        "this part isn't a joke.\n\ncall or text 988.\ngambling: 1-800-GAMBLER."
-    )
+    await update.message.reply_text("this part isn't a joke.\n\ncall or text 988.\ngambling: 1-800-GAMBLER.")
 
 
 async def my_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -629,10 +600,7 @@ async def handle_text(update: Update, text: str):
     jump = wants_jump(text)
 
     if is_crisis(text):
-        await roast(
-            update,
-            "stop. this isn't the bit. call or text 988 now. money can be rebuilt. a life cannot.",
-        )
+        await roast(update, "stop. this isn't the bit. call or text 988 now. money can be rebuilt. a life cannot.")
         return
     if not private and is_shill_drop(text) and not staff:
         await roast(update, pick(user_id, SCAM_TROLL))
