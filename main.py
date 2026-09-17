@@ -4,8 +4,6 @@ import base64
 import random
 import asyncio
 import threading
-import urllib.request
-from urllib.parse import quote
 from collections import defaultdict
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -63,19 +61,6 @@ include EXACTLY one desk line: pumpfunmentalhealthhotline.com
 OR @PFMentalHealth then a space then the FULL ca EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump. no + sign.
 rotate closers like: call us today for your dose of cope.
 no buy pitch.
-"""
-
-MEME_VOICE = """
-Write ONE image prompt in the Pumpfun Mental Health Hotline house style from @PFMentalHealth.
-That style is:
-- mint / kelly green flat background
-- a phone shaped like a green-and-white capsule pill
-- simple flat vector cartoon or a classic reaction-meme layout
-- thick white Impact-style caption bars, 3-8 words
-- trench cope joke matching the user's description
-- ugly-funny, screenshot energy, logo energy
-NOT a photoreal woman, NOT a cinematic doctor portrait, NOT fashion lighting.
-No minors. No gore. Return only the prompt.
 """
 
 CRISIS = [
@@ -401,37 +386,6 @@ def draft_tweet(topic: str) -> str:
     )
 
 
-def meme_prompt(desc: str) -> str:
-    result = client.chat.completions.create(
-        model="openai/gpt-oss-20b",
-        messages=[
-            {"role": "system", "content": MEME_VOICE},
-            {"role": "user", "content": desc.strip() or "bags down"},
-        ],
-        temperature=0.7,
-        max_tokens=180,
-        extra_body={"reasoning_effort": "low"},
-    )
-    prompt = spoken_only(result.choices[0].message.content or desc)
-    extra = (
-        ", mint green flat background, smartphone shaped like a green and white capsule pill, "
-        "simple flat vector cartoon, bold white impact caption bars, reaction meme layout, "
-        "not photoreal, not a woman portrait, Pumpfun Mental Health Hotline style"
-    )
-    return (prompt + extra)[:450]
-
-
-def fetch_meme(prompt: str, path: Path):
-    url = (
-        "https://image.pollinations.ai/prompt/"
-        + quote(prompt)
-        + "?width=768&height=768&nologo=true&model=flux&enhance=true"
-    )
-    req = urllib.request.Request(url, headers={"User-Agent": "DrHopeIumBot/1.0"})
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        path.write_bytes(resp.read())
-
-
 def look_at_image(user_id: int, b64: str, question: str) -> str:
     messages = [
         {"role": "system", "content": VOICE + "\nNever output thinking."},
@@ -497,7 +451,6 @@ START = """hi. i'm Dr. Hope Ium.
 Pumpfun Mental Health Hotline.
 
 /tweet drafts an x line.
-/meme plus a description makes a pic.
 
 real crisis: 988
 """
@@ -539,29 +492,6 @@ async def tweet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("TWEET DRAFT ERROR:", type(e).__name__, e)
         line = f"clinic's open. call us today for your dose of cope. {HOTLINE_SITE}"
     await update.message.reply_text(line)
-
-
-async def meme(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_muted_topic(update):
-        return
-    desc = " ".join(context.args) if context.args else ""
-    if update.message.reply_to_message and update.message.reply_to_message.text:
-        desc = (desc + " " + update.message.reply_to_message.text).strip()
-    if not desc:
-        await update.message.reply_text("give me a description. /meme bags down")
-        return
-    path = Path("/tmp") / f"meme_{update.effective_user.id}.jpg"
-    try:
-        prompt = await asyncio.to_thread(meme_prompt, desc)
-        await asyncio.to_thread(fetch_meme, prompt, path)
-        with path.open("rb") as img:
-            await update.message.reply_photo(photo=img)
-    except Exception as e:
-        print("MEME ERROR:", type(e).__name__, e)
-        await update.message.reply_text("the copier jammed. try /meme again with a shorter description.")
-    finally:
-        if path.exists():
-            path.unlink()
 
 
 async def send_voice(update: Update, text: str) -> bool:
@@ -696,7 +626,6 @@ async def run():
     app.add_handler(CommandHandler("privacy", privacy))
     app.add_handler(CommandHandler("988", nine_eight_eight))
     app.add_handler(CommandHandler("tweet", tweet))
-    app.add_handler(CommandHandler("meme", meme))
     app.add_handler(CommandHandler("id", my_id))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.VOICE, voice_chat))
