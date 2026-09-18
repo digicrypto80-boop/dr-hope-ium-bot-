@@ -39,6 +39,31 @@ FREE_CHATS = set()
 MUTE_THREADS = {6639}
 HOTLINE_CA = "EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump"
 HOTLINE_SITE = "pumpfunmentalhealthhotline.com"
+HOURLY_CHAT = os.environ.get("HOURLY_CHAT", "@PumpfunMentalHealthHotline")
+HOURLY_THREAD = os.environ.get("HOURLY_THREAD", "").strip()
+CLOSERS = [
+    "call us today for your dose of cope.",
+    "clinic's open. cope is complimentary.",
+    "your call matters. your entry doesn't.",
+    "hang up after. touch grass.",
+]
+HOURLY_LINES = [
+    "clinic's open. bags down is not a personality.",
+    "your call matters. your entry doesn't.",
+    "wen moon is not a treatment plan.",
+    "sell half on the double. then go outside.",
+    "if you're asking if dex is paid, treat it as unpaid.",
+    "check dm is not a coping skill. it's a scam.",
+    "call us today for your dose of cope.",
+    "rent first. candles second.",
+    "the chart can wait. your nervous system cannot.",
+    "we are so back is usually we are so bagheld.",
+    "not financial advice. sit down.",
+    "hang up after. touch grass.",
+    "the clinic does not do raids. we do reality.",
+    "apeing your rent is how you earn a follow-up appointment.",
+    "dev is cooking. you're the meal. sit.",
+]
 
 client = OpenAI(
     api_key=os.environ.get("GROQ_API_KEY", ""),
@@ -53,14 +78,6 @@ You work for the Pumpfun Mental Health Hotline.
 Official desk: pumpfunmentalhealthhotline.com / @PFMentalHealth / $HOTLINE
 ca: EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump
 do not tell anyone to buy. 1-3 sentences. Real crisis: 988.
-"""
-
-TWEET_VOICE = """
-You write X posts as Dr. Hope Ium. output ONLY the tweet.
-include EXACTLY one desk line: pumpfunmentalhealthhotline.com
-OR @PFMentalHealth then a space then the FULL ca EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump. no + sign.
-rotate closers like: call us today for your dose of cope.
-no buy pitch.
 """
 
 CRISIS = [
@@ -354,36 +371,41 @@ def think(user_id: int, text: str, care: bool = False) -> str:
 
 def finish_tweet(line: str) -> str:
     line = (line or "").strip().strip('"')
-    if line.lower().startswith("paste this"):
-        line = line.split("\n", 1)[-1].strip()
-    line = line.replace("@PFMentalHealth +", "@PFMentalHealth ").replace("@PFMentalHealth+", "@PFMentalHealth ")
-    if "EhhGRV" in line and HOTLINE_CA not in line:
-        line = re.sub(r"EhhGRV[A-Za-z0-9]+", HOTLINE_CA, line)
-    if "@PFMentalHealth" in line and HOTLINE_CA not in line:
-        line = line.rstrip() + " " + HOTLINE_CA
-    if HOTLINE_CA in line and len(line) > 280:
-        line = re.sub(r"\s+", " ", line.replace("@PFMentalHealth", "").replace(HOTLINE_CA, "")).strip()
-        if HOTLINE_SITE not in line:
-            line = (line[:220].rstrip() + " " + HOTLINE_SITE).strip()
-    if HOTLINE_SITE not in line and HOTLINE_CA not in line:
-        line = (line[:230].rstrip() + " " + HOTLINE_SITE).strip()
-    return line[:280]
+    line = re.sub(r"https?://\S+", "", line)
+    line = line.replace("pumpfunmentalhealthhotline.com", "")
+    line = line.replace("@PFMentalHealth", "")
+    line = re.sub(r"EhhGRV[A-Za-z0-9]*", "", line)
+    line = re.sub(r"\s+", " ", line).strip(" -—.")
+    if not line:
+        line = "the chart can wait. your nervous system cannot"
+    parts = re.split(r"(?<=[.!?])\s+", line)
+    body = parts[0].rstrip(".")
+    if len(body) > 160:
+        body = body[:157].rsplit(" ", 1)[0]
+    closer = random.choice(CLOSERS)
+    option_a = f"{body}. {closer} {HOTLINE_SITE}"
+    option_b = f"{body}. {closer} @PFMentalHealth {HOTLINE_CA}"
+    return option_b if len(option_b) <= 280 else option_a
 
 
 def draft_tweet(topic: str) -> str:
     result = client.chat.completions.create(
         model="openai/gpt-oss-20b",
         messages=[
-            {"role": "system", "content": TWEET_VOICE},
-            {"role": "user", "content": topic.strip() or "write a standalone hotline post"},
+            {
+                "role": "system",
+                "content": (
+                    "Write ONE short roast sentence as Dr. Hope Ium. "
+                    "No url. No @handle. No contract. No closer. No hashtags."
+                ),
+            },
+            {"role": "user", "content": topic.strip() or "bagholders staring at pump.fun"},
         ],
-        temperature=1.1,
-        max_tokens=280,
+        temperature=1.05,
+        max_tokens=80,
         extra_body={"reasoning_effort": "low"},
     )
-    return finish_tweet(spoken_only(result.choices[0].message.content or "")) or (
-        f"clinic's open. call us today for your dose of cope. {HOTLINE_SITE}"
-    )
+    return finish_tweet(spoken_only(result.choices[0].message.content or ""))
 
 
 def look_at_image(user_id: int, b64: str, question: str) -> str:
@@ -447,6 +469,21 @@ async def speak(text: str, path: Path):
     await comm.save(str(path))
 
 
+async def hourly_post(bot):
+    await asyncio.sleep(90)
+    while True:
+        try:
+            line = random.choice(HOURLY_LINES)
+            kwargs = {}
+            if HOURLY_THREAD.isdigit():
+                kwargs["message_thread_id"] = int(HOURLY_THREAD)
+            await bot.send_message(HOURLY_CHAT, line, **kwargs)
+            print("HOURLY OK")
+        except Exception as e:
+            print("HOURLY FAIL:", type(e).__name__, e)
+        await asyncio.sleep(3600)
+
+
 START = """hi. i'm Dr. Hope Ium.
 Pumpfun Mental Health Hotline.
 
@@ -490,7 +527,7 @@ async def tweet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         line = await asyncio.to_thread(draft_tweet, topic)
     except Exception as e:
         print("TWEET DRAFT ERROR:", type(e).__name__, e)
-        line = f"clinic's open. call us today for your dose of cope. {HOTLINE_SITE}"
+        line = f"the chart can wait. your nervous system cannot. call us today for your dose of cope. {HOTLINE_SITE}"
     await update.message.reply_text(line)
 
 
@@ -637,6 +674,7 @@ async def run():
     async with app:
         await app.bot.delete_webhook(drop_pending_updates=True)
         await app.start()
+        asyncio.create_task(hourly_post(app.bot))
         await app.updater.start_polling()
         await asyncio.Event().wait()
 
