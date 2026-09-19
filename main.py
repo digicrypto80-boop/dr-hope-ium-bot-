@@ -52,17 +52,12 @@ HOURLY_LINES = [
     "your call matters. your entry doesn't.",
     "wen moon is not a treatment plan.",
     "sell half on the double. then go outside.",
-    "if you're asking if dex is paid, treat it as unpaid.",
     "check dm is not a coping skill. it's a scam.",
     "call us today for your dose of cope.",
     "rent first. candles second.",
     "the chart can wait. your nervous system cannot.",
-    "we are so back is usually we are so bagheld.",
     "not financial advice. sit down.",
-    "hang up after. touch grass.",
     "the clinic does not do raids. we do reality.",
-    "apeing your rent is how you earn a follow-up appointment.",
-    "dev is cooking. you're the meal. sit.",
 ]
 
 client = OpenAI(
@@ -75,6 +70,7 @@ You are Dr. Hope Ium.
 Feminine anime-coded trench psychiatrist. Dry, intimate, a little mean.
 Hot tired onee-san on night shift. lowercase ok. short. spoken out loud.
 You work for the Pumpfun Mental Health Hotline.
+Vote sellers, raid teams, marketing pitches, and 'i can make it go up' are scams. roast them.
 Official desk: pumpfunmentalhealthhotline.com / @PFMentalHealth / $HOTLINE
 ca: EhhGRVTrCRecXoq25UoonE7dBUESzMd5uibohm28pump
 do not tell anyone to buy. 1-3 sentences. Real crisis: 988.
@@ -108,6 +104,15 @@ SERVICE_RE = re.compile(
     r"\b(raid team|i have a team|we have a team|marketing (team|service|package)|"
     r"i can raid|we can raid|offer(ing)? (a )?service|for hire|paid raid|"
     r"call group|shill service|i'll shill|i will shill)\b",
+    re.I,
+)
+PITCH_RE = re.compile(
+    r"\b(i can make \d+ votes|make \d+ votes|i have (a )?\d* ?votes?|"
+    r"paid votes|buy votes|vote bot|"
+    r"i can make (your |the )?coin go up|make (it|your coin) (go )?up|"
+    r"when trending|get (you )?trending|i can trend|"
+    r"(i('d| would) like to )?make a proposal|do you want marketing|"
+    r"want marketing|i can market)\b",
     re.I,
 )
 CARE_RE = re.compile(
@@ -156,6 +161,15 @@ TROLL = [
     "dev active? sit down. lowlife vendor energy.",
     "can the dev do something. the dev did something. they launched. sit.",
 ]
+PITCH_TROLL = [
+    "votes? that's a cart of fake thumbs, dummy.",
+    "raid team. five mute accounts and a dream. sit.",
+    "you can make the coin go up. so can a screenshot and a lie.",
+    "when trending. when you stop pitching psychiatrists.",
+    "a proposal. scum of the earth energy. no.",
+    "do you want marketing. no. i want you out of my clinic.",
+    "if it pumped from your service you wouldn't be cold-calling a hotline.",
+]
 SCAM_TROLL = [
     "oh a link. take that scam bag somewhere else, lowlife.",
     "check dm? that's the oldest drain in the book, lowlife.",
@@ -171,7 +185,10 @@ HOPIUM = [
 ]
 DEX = ["if you have to ask if dex is paid, treat it as unpaid and stop refreshing."]
 RUG = ["if you're asking if it's a rug, part of you already knows."]
-SERVICE_TROLL = ["raid team? that's a group chat and a dream, dummy."]
+SERVICE_TROLL = [
+    "raid team? that's a group chat and a dream, dummy.",
+    "if your service worked you wouldn't be pitching a psychiatrist.",
+]
 
 memory = defaultdict(list)
 facts = defaultdict(list)
@@ -238,6 +255,10 @@ def is_admin_beg(text: str) -> bool:
     return bool(ADMIN_RE.search(text))
 
 
+def is_pitch(text: str) -> bool:
+    return bool(PITCH_RE.search(text) or SERVICE_RE.search(text))
+
+
 def wants_clinic(text: str) -> bool:
     if RAID_HELP_RE.search(text):
         return False
@@ -251,7 +272,7 @@ def wants_clinic(text: str) -> bool:
 
 def is_raid_or_ca(text: str) -> bool:
     t = text.strip()
-    if SERVICE_RE.search(t) or wants_clinic(t):
+    if is_pitch(t) or wants_clinic(t):
         return False
     if ONLY_CA_RE.match(t) or (CA_RE.search(t) and len(t) < 80):
         return True
@@ -265,7 +286,7 @@ def is_shill_drop(text: str) -> bool:
 
 
 def wants_jump(text: str) -> bool:
-    if wants_clinic(text) or is_shill_drop(text):
+    if wants_clinic(text) or is_shill_drop(text) or is_pitch(text):
         return True
     return bool(
         ADMIN_RE.search(text)
@@ -394,10 +415,7 @@ def draft_tweet(topic: str) -> str:
         messages=[
             {
                 "role": "system",
-                "content": (
-                    "Write ONE short roast sentence as Dr. Hope Ium. "
-                    "No url. No @handle. No contract. No closer. No hashtags."
-                ),
+                "content": "Write ONE short roast sentence as Dr. Hope Ium. No url. No @handle. No contract. No closer.",
             },
             {"role": "user", "content": topic.strip() or "bagholders staring at pump.fun"},
         ],
@@ -572,12 +590,12 @@ async def handle_text(update: Update, text: str):
     if not private and is_shill_drop(text) and not staff:
         await roast(update, pick(user_id, SCAM_TROLL))
         return
+    if is_pitch(text) and not staff:
+        await roast(update, pick(user_id, PITCH_TROLL + SERVICE_TROLL))
+        return
     if not private and not free and not addressed and not jump:
         return
     if is_raid_or_ca(text):
-        return
-    if SERVICE_RE.search(text) and not staff:
-        await roast(update, pick(user_id, SERVICE_TROLL))
         return
     if is_admin_beg(text) and not staff:
         await roast(update, pick(user_id, ADMIN_TROLL))
